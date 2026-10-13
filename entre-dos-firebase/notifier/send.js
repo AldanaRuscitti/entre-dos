@@ -1,7 +1,9 @@
 // Proceso de avisos de Entre Dos. Lo corre GitHub Actions cada 15 minutos (ver .github/workflows/avisos.yml).
 // Necesita: FIREBASE_SERVICE_ACCOUNT (JSON de la cuenta de servicio) y TELEGRAM_BOT_TOKEN (opcional). APP_URL es opcional.
 "use strict";
-const admin = require("firebase-admin");
+const {initializeApp, cert} = require("firebase-admin/app");
+const {getFirestore} = require("firebase-admin/firestore");
+const {getMessaging} = require("firebase-admin/messaging");
 const {load} = require("./extract");
 const {plan, digest, localNow} = require("./logic");
 
@@ -9,8 +11,10 @@ const SA = process.env.FIREBASE_SERVICE_ACCOUNT;
 const TG = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const APP_URL = (process.env.APP_URL || "").trim();
 if (!SA) { console.error("Falta el secreto FIREBASE_SERVICE_ACCOUNT"); process.exit(1); }
-admin.initializeApp({credential:admin.credential.cert(JSON.parse(SA))});
-const db = admin.firestore();
+let creds;
+try { creds = JSON.parse(SA); } catch { console.error("El secreto FIREBASE_SERVICE_ACCOUNT no es un JSON válido: pegá el contenido completo del archivo .json"); process.exit(1); }
+initializeApp({credential:cert(creds)});
+const db = getFirestore();
 const L = load();
 
 const alive = snap => Object.fromEntries(snap.docs.map(d => [d.id, {...d.data(), id:d.id}]).filter(([, v]) => !v.deletedAt));
@@ -72,7 +76,7 @@ async function deliver(user, msgs) {
   for (const d of tokens) {
     for (const m of msgs) {
       try {
-        await admin.messaging().send({token:d.get("token"), data:{title:m.title, body:m.body, tag:m.tag || "", url:APP_URL || "./"}, webpush:{headers:{Urgency:"high", TTL:"3600"}}});
+        await getMessaging().send({token:d.get("token"), data:{title:m.title, body:m.body, tag:m.tag || "", url:APP_URL || "./"}, webpush:{headers:{Urgency:"high", TTL:"3600"}}});
         sent++;
       } catch (e) {
         if (["messaging/registration-token-not-registered", "messaging/invalid-registration-token", "messaging/invalid-argument"].includes(e.code)) { await d.ref.delete().catch(() => {}); break; }
