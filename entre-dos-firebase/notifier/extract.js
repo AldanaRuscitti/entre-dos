@@ -8,7 +8,9 @@ const path = require("node:path");
 const APP = process.env.APP_FILE || path.join(__dirname, "..", "index.html");
 const NAMES = ["pad", "ymd", "pd", "addDays", "MONTHS", "MON_S", "DOWL", "CURS", "fmtC", "money", "shortDate", "DEF_PREFS", "prefs", "meP", "meId", "person", "pName",
   "nth", "occurrences", "monthDay", "addInterval", "daysBetween", "ymdShift", "wdayOf", "choreWdays", "isWeekdayChore", "nextWeekdayOnOrAfter", "prevWeekdayOnOrBefore",
-  "dayNum", "weekAnchor", "choreWeekOn", "nextChoreDay", "prevChoreDay", "choreLastOcc", "chorePending", "choreLogs", "choreState", "pollWho", "pollState", "fixedDone", "tplDone"];
+  "dayNum", "weekAnchor", "choreWeekOn", "nextChoreDay", "prevChoreDay", "choreLastOcc", "chorePending", "choreLogs", "choreState", "pollWho", "pollState", "fixedDone", "tplDone",
+  // finanzas compartidas, categorías y montos (para el resumen semanal, presupuestos y los comandos del bot)
+  "r2", "isExp", "shares", "groupExpenses", "balances", "settle", "groupDefaultSplit", "DEF_CFG", "cfg", "catOf", "CAT_WORDS", "guessCat", "parseAmt", "choreOccCover"];
 
 function extract(src, names) {
   const lines = src.split("\n"), out = [];
@@ -28,7 +30,7 @@ function extract(src, names) {
 
 function load(file = APP) {
   const code = extract(fs.readFileSync(file, "utf8"), NAMES);
-  const S = {uid:null, people:{}, events:{}, chores:{}, choreLog:{}, dues:{}, polls:{}, thanks:{}, fixed:{}, groups:{}, expenses:{},
+  const S = {uid:null, people:{}, events:{}, chores:{}, choreLog:{}, dues:{}, polls:{}, thanks:{}, fixed:{}, groups:{}, expenses:{}, config:{}, lists:{}, items:{},
     priv:{events:{}, tx:{}, tpl:{}, dues:{}, gifts:{}, settings:null}};
   const ctx = {S, Intl, Math, Number, String, Object, Array, Set, Date, isFinite, parseFloat, parseInt, console, __TODAY:null};
   vm.createContext(ctx);
