@@ -1,0 +1,37 @@
+# Manda los avisos de Entre Dos cada 15 minutos (gratis en repositorios públicos).
+name: Avisos
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: avisos
+  cancel-in-progress: false
+permissions:
+  contents: read
+  actions: write
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: notifier/package-lock.json
+      - run: npm ci --omit=dev --no-audit --no-fund
+        working-directory: notifier
+      - run: node send.js
+        working-directory: notifier
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          APP_URL: ${{ vars.APP_URL }}
+      # GitHub apaga los procesos programados después de 60 días sin cambios en el repositorio. Esto lo mantiene prendido.
+      - name: Mantener activo
+        if: always()
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/avisos.yml/enable" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
