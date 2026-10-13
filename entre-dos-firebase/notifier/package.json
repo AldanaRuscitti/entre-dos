@@ -1,0 +1,8 @@
+{
+  "name": "entre-dos-avisos",
+  "private": true,
+  "description": "Manda los avisos automáticos de Entre Dos por Telegram y notificaciones del celular.",
+  "scripts": {"start": "node send.js", "test": "node --test test.js"},
+  "engines": {"node": ">=20"},
+  "dependencies": {"firebase-admin": "14.4.0"}
+}

@@ -1,0 +1,28 @@
+rules_version = '2';
+// Reglas de seguridad de Entre Dos. Pegalas en Firebase → Firestore → Reglas → Publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isMember() {
+      return signedIn() && exists(/databases/$(database)/documents/access/$(request.auth.token.email.lower()));
+    }
+    // Lista de acceso: cada documento es un mail. Los miembros pueden sumar o quitar gente.
+    match /access/{email} {
+      allow read: if isMember() || (signedIn() && request.auth.token.email.lower() == email);
+      allow create, delete: if isMember();
+      allow update: if false;
+    }
+    // Espacio privado de cada persona: solo esa persona lo lee y lo escribe.
+    match /data/users/{uid}/{doc} {
+      allow read, write: if isMember() && request.auth.uid == uid;
+    }
+    // Estado interno de los avisos: solo lo usa el proceso automático.
+    match /notifState/{doc} {
+      allow read, write: if false;
+    }
+    // Todo lo compartido (gastos, agenda, tareas, listas…): solo miembros.
+    match /{col}/{doc} {
+      allow read, write: if isMember() && !(col in ["access", "notifState", "data"]);
+    }
+  }
+}

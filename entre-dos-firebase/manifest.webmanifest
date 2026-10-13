@@ -1,0 +1,16 @@
+{
+  "name": "Entre Dos",
+  "short_name": "Entre Dos",
+  "description": "La casa, la agenda y la plata, entre los dos.",
+  "lang": "es-AR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#13233A",
+  "theme_color": "#13233A",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
