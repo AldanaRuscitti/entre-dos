@@ -93,9 +93,7 @@ svg{flex:none}
   .bnav .ns{display:inline}
   .hero{padding:22px 18px 18px;border-radius:22px}
   .hero h1{margin-bottom:14px}
-  .hero-stats{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin-inline:-18px;padding-inline:18px;scrollbar-width:none}
-  .hero-stats::-webkit-scrollbar{display:none}
-  .hero-stat{flex:0 0 72%;scroll-snap-align:start}
+  .hero-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0;padding:0}
   .filters{flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding:2px 16px 6px;scrollbar-width:none}
   .filters::-webkit-scrollbar{display:none}
   .filters > *{flex:none}
@@ -358,7 +356,10 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .fab:hover{transform:translateY(-2px)}
 .fab svg{width:26px;height:26px}
 @media (max-width:760px){.fab{bottom:calc(92px + env(safe-area-inset-bottom,0px));right:16px;width:54px;height:54px;border-radius:18px}}
+.set-group{grid-column:1/-1;margin:14px 2px -4px;font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.qa.qa-top{grid-template-columns:repeat(3,minmax(0,1fr))}
+.qa.qa-top button{padding-block:16px}
 .qa button{border:0;background:var(--surface2);border-radius:16px;padding:14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;font-weight:700;color:var(--ink);min-width:0}
 .qa button small{font-weight:500;color:var(--muted);font-size:12.5px}
 .qa button:hover{background:var(--accent-soft)}
@@ -423,10 +424,10 @@ details.more .sum-val{margin-left:auto;color:var(--muted);font-weight:600;font-s
 @media (max-width:760px){
   .hero{padding:20px 18px 18px}
   .hero h1{font-size:28px;margin-bottom:14px}
-  .hero-stats{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -18px;padding:0 18px 2px;scrollbar-width:none;gap:10px}
-  .hero-stats::-webkit-scrollbar{display:none}
-  .hero-stat{flex:0 0 74%;scroll-snap-align:start}
-  .hero-stat b{font-size:19px}
+  .hero-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+  .hero-stat{padding:10px 10px}
+  .hero-stat b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hero-stat small{display:none}
 }
 .sr{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0;padding:0;margin:-1px}
 .check-item .ci-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0;cursor:pointer}
@@ -438,7 +439,8 @@ details.more .sum-val{margin-left:auto;color:var(--muted);font-weight:600;font-s
 @media (hover:none){.btn:hover,.fab:hover{transform:none}}
 @media (max-width:760px){
   .input,select.input,textarea.input{font-size:16px}
-  .toast{bottom:calc(162px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:auto;top:calc(10px + env(safe-area-inset-top,0px))}
+  #main.wrap{padding-bottom:calc(170px + env(safe-area-inset-bottom,0px))}
   .stats{grid-template-columns:1fr 1fr;gap:10px}
   .stats .card{padding:14px}
   .stats .big{font-size:19px}
@@ -545,7 +547,7 @@ const S = {
   ready:false, local:false, readOnly:false, uid:null,
   people:{}, groups:{}, events:{}, expenses:{}, config:{}, lists:{}, items:{}, fixed:{}, goals:{}, contribs:{}, chores:{}, choreLog:{}, dues:{}, polls:{}, thanks:{}, pets:{},
   priv:{events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, settings:null},
-  listId: store.get("listId", null), cTab: store.get("cTab", "mov"), hTab: (() => { const h = store.get("hTab", "tareas"); if (h === "fechas") { store.set("hTab", "tareas"); return "tareas"; } return h; })(), choreMine: false, cMonth: ymd(new Date()).slice(0, 7), drafts:{},
+  listId: store.get("listId", null), cTab: store.get("cTab", "mov"), hTab: (() => { const h = store.get("hTab", "tareas"); if (h === "fechas" || h === "mascotas") { store.set("hTab", "tareas"); return "tareas"; } return h; })(), choreMine: false, cMonth: ymd(new Date()).slice(0, 7), drafts:{},
   view: (v => v === "listas" ? "hogar" : v)(store.get("view", "inicio")),
   calMonth: ymd(new Date()).slice(0, 7),
   selDay: todayS(),
@@ -555,7 +557,7 @@ const S = {
   groupId: store.get("groupId", null),
   q: "", qCat: "",
   finMonth: ymd(new Date()).slice(0, 7),
-  finCur: null,
+  finCur: null, fTab: store.get("fTab", "mes"),
   onSubmit: null
 };
 const cfg = () => ({...DEF_CFG, ...(S.config.main || {})});
@@ -635,7 +637,7 @@ const dict = (v, f) => { const o = {}; if (v && typeof v === "object" && !Array.
 const catsOk = (l, d) => Array.isArray(l) && l.length ? l.filter(k => k && typeof k.id === "string" && !BADK(k.id)).map(k => ({id:k.id, name:str(k.name, 40) || "?", color:safeColor(k.color)})) : d;
 const splitDict = v => dict(v, x => x === true ? true : num(x) > 0 ? num(x) : undefined);
 const SAN = {
-  people:d => ({...d, name:str(d.name, 30) || "Alguien", color:safeColor(d.color), uid:typeof d.uid === "string" ? d.uid : null}),
+  people:d => ({...d, name:str(d.name, 30) || "Alguien", color:safeColor(d.color), uid:typeof d.uid === "string" ? d.uid : null, alias:str(d.alias, 40)}),
   groups:d => ({...d, name:str(d.name, 40) || "Grupo", members:ids(d.members), cur:CURS.includes(d.cur) ? d.cur : "ARS", splitMode:d.splitMode === "shares" ? "shares" : "equal", weights:dict(d.weights, x => num(x) > 0 ? num(x) : undefined)}),
   expenses:d => {
     const kind = d.kind ?? "expense";
@@ -781,7 +783,7 @@ let DB = null;
 const privPath = id => `data/users/${S.uid}/${id}`;
 function errMsg(e) {
   const c = e && e.code;
-  if (c === "invalid_argument") return "No se guardó: tenés permiso solo para ver. Pedile a quien te invitó que te haga Editor.";
+  if (c === "invalid_argument") return "No se guardó: algún dato no es válido. Revisalo y probá de nuevo.";
   if (c === "quota_exceeded") return "Se llenó el espacio. Para seguir cargando, bajá una copia en Ajustes y borrá gastos o movimientos viejos.";
   if (c === "denied") return "Tu cuenta no tiene acceso a Entre Dos.";
   if (c === "revoked" || c === "not_granted") return "Se cortó la conexión con tus datos. Recargá la página para seguir.";
@@ -902,7 +904,7 @@ function renderInner() {
   { const known = store.get("uids", {}), now = {}; let changed = false;
     for (const pp of Object.values(S.people)) { now[pp.id] = pp.uid || null; if (pp.id in known && known[pp.id] && known[pp.id] !== now[pp.id] && pp.uid !== S.uid) { (S.uidAlerts ||= new Set()).add(pp.id); } if (known[pp.id] !== now[pp.id]) changed = true; }
     if (changed) store.set("uids", now); }
-  $("#fab").setAttribute("aria-label", {cuentas:"Agregar gasto", agenda:S.calMode === "fechas" ? "Agregar fecha" : "Agregar evento", finanzas:"Agregar movimiento", hogar:{listas:"Agregar a una lista", decidir:"Nueva votación", mascotas:"Nueva mascota"}[S.hTab] || "Agregar tarea"}[S.view] || "Agregar");
+  $("#fab").setAttribute("aria-label", {cuentas:"Agregar gasto", agenda:S.calMode === "fechas" ? "Agregar fecha" : "Agregar evento", finanzas:"Agregar movimiento", hogar:{listas:"Agregar a una lista", decidir:"Nueva votación"}[S.hTab] || "Agregar tarea"}[S.view] || "Agregar");
   $("#mePill").innerHTML = me ? `<button class="me-pill" data-act="go" data-v="ajustes" aria-label="Ajustes">${avatar(me.id)}${esc(me.name)}${ICONS.ajustes}</button>` : "";
   const ae = document.activeElement;
   const fid = ae && ae.id && main.contains(ae) ? ae.id : null;
@@ -920,7 +922,6 @@ function renderInner() {
     <p class="small muted">Si es tuyo, recuperalo. Tus finanzas privadas no se vieron afectadas: siguen solo en tu espacio.</p>
     <div class="row"><button class="btn primary" data-act="reclaimProfile" data-id="${esc(lost.id)}">Es mío, recuperarlo</button></div></section>`; a11yPass(main); return; }
   if (S.uidAlerts && S.uidAlerts.size) html += `<div class="banner"><b>Cambió la cuenta de un perfil.</b> ${[...S.uidAlerts].map(id => esc(pName(id))).join(", ")} ahora está vinculado a otra cuenta (o a ninguna). Si no fue a propósito, revisá quién tiene acceso desde Compartir.</div>`;
-  if (S.readOnly) html += `<div class="banner"><b>Podés ver, pero no cargar nada.</b> Pedile a quien te invitó que te cambie el permiso a Editor.</div>`;
   html += me ? (V[S.view] || V.inicio)() : V.onboarding();
   main.innerHTML = html;
   a11yPass(main);
@@ -1076,6 +1077,12 @@ function settle(net) {
   }
   return res;
 }
+// Botones para quedar a mano: registrar en un toque y copiar el alias de quien recibe.
+function settleBtns(t, me) {
+  const out = t.from === me, alias = S.people[t.to]?.alias;
+  const data = `data-from="${esc(t.from)}" data-to="${esc(t.to)}" data-amt="${t.amount}" data-cur="${esc(t.cur)}" ${t.group ? `data-group="${esc(t.group)}"` : ""}`;
+  return `<div class="row" style="gap:6px;justify-content:flex-end">${out && alias ? `<button class="btn sm" data-act="copyAlias" data-alias="${esc(alias)}" data-amt="${t.amount}" data-cur="${esc(t.cur)}">Copiar alias</button>` : ""}<button class="btn sm ${out ? "primary" : ""}" data-act="settle" ${data}>${out ? "Ya se lo pasé" : t.to === me ? "Ya me lo pasó" : "Ya está"}</button><button class="icon-btn" data-act="settleEdit" ${data} aria-label="Registrar otro monto" title="Otro monto">✎</button></div>`;
+}
 function curGroup() {
   const gs = Object.values(S.groups);
   if (S.groupId && S.groups[S.groupId]) return S.groups[S.groupId];
@@ -1198,43 +1205,44 @@ V.inicio = () => {
   const parts = [];
   if (myTransfers.length) parts.push(`<div class="month-h">Para quedar a mano</div>` + myTransfers.map(t => { const out = t.from === me.id;
     return `<div class="item">${avatar(out ? t.to : t.from)}<div class="grow"><div class="t">${out ? `Le pasás ${esc(money(t.amount, t.cur))} a ${esc(pName(t.to))}` : `${esc(pName(t.from))} te pasa ${esc(money(t.amount, t.cur))}`}</div><div class="s">${esc(S.groups[t.group]?.name || "")}</div></div>
-      <button class="btn sm ${out ? "primary" : ""}" data-act="settle" data-from="${esc(t.from)}" data-to="${esc(t.to)}" data-amt="${t.amount}" data-cur="${esc(t.cur)}" data-group="${esc(t.group)}">${out ? "Ya se lo pasé" : "Ya me lo pasó"}</button></div>`; }).join(""));
-  if (fx.length) parts.push(`<div class="month-h">Fijos que vencen</div>` + fx.map(x => fixedRow(x.t, x.kind, ym)).join(""));
-  if (myChores.length) parts.push(`<div class="month-h">Tus tareas de hoy</div>` + myChores.slice(0, 5).map(x => choreRow(x.c)).join("") + (myChores.length > 5 ? `<p class="small muted" style="margin:6px 8px">Y ${myChores.length - 5} más en Hogar.</p>` : ""));
+      ${settleBtns(t, me.id)}</div>`; }).join(""));
+  if (myChores.length) parts.push(`<div class="month-h">Tus tareas</div>` + myChores.slice(0, 5).map(x => choreRow(x.c)).join("") + (myChores.length > 5 ? `<p class="small muted" style="margin:6px 8px">Y ${myChores.length - 5} más en Hogar.</p>` : ""));
+  if (fx.length) parts.push(`<div class="month-h">Pagos de la semana</div>` + fx.map(x => fixedRow(x.t, x.kind, ym)).join(""));
   const soonDues = allDues().filter(d => d.days <= (d.lead ?? 7));
   if (soonDues.length) parts.push(`<div class="month-h">Se viene <button class="linkbtn" data-act="go" data-v="fechas">Ver fechas ›</button></div>` + soonDues.slice(0, 5).map(dueRow).join(""));
   const seenP = store.get("pollSeen", []);
   const pollsTodo = Object.values(S.polls).map(p2 => ({p2, st:pollState(p2)})).filter(x => (x.st.iAmIn && !x.st.myDone) || (x.st.all && !seenP.includes(x.p2.id)));
   if (pollsTodo.length) parts.push(`<div class="month-h">Para decidir</div>` + pollsTodo.map(({p2, st}) => `<div class="item click" data-act="openPoll" data-id="${esc(p2.id)}"><span class="cat-ic" style="--c:var(--accent2)">${UI.scale}</span><div class="grow"><div class="t">${esc(p2.title)}</div><div class="s">${!st.myDone ? "Te falta votar" : st.matches.length ? "¡Ya hay coincidencias!" : "Ya votaron todos"}</div></div><span class="muted">›</span></div>`).join(""));
-  if (todayEvs.length) parts.push(`<div class="month-h">Hoy en la agenda</div>` + todayEvs.map(x => evRow({...x, day:t0}, false)).join(""));
-  const weekHtml = `<section class="card" style="margin-bottom:16px"><div class="card-h"><span class="ic">${UI.list}</span><h2>Para esta semana</h2></div>
-    <div class="list">${parts.length ? parts.join("") : `<div class="empty"><b>Semana tranquila</b>Están a mano y no hay nada pendiente.</div>`}</div></section>`;
-  const openItems = Object.values(S.items).filter(i => !i.done && S.lists[i.list]).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const listHtml = openItems.length ? `<section class="card"><div class="card-h"><span class="ic">${UI.list}</span><h2>Pendientes en listas</h2><button class="btn ghost sm spacer" data-act="go" data-v="listas">Ver ›</button></div>
-    <div class="list">${openItems.slice(0, 4).map(i => checkItem(i, true)).join("")}</div>${openItems.length > 4 ? `<p class="small muted" style="margin:8px 0 0">Y ${openItems.length - 4} más.</p>` : ""}</section>` : "";
+  const todoHtml = parts.length ? `<section class="card" style="margin-bottom:16px"><div class="card-h"><span class="ic">${UI.list}</span><h2>Para hacer</h2></div><div class="list">${parts.join("")}</div></section>` : "";
+  // Próximos 7 días: eventos y fechas juntos, sin repetir lo de hoy en otro lado
+  const to7 = ymd(addDays(new Date(), 6)), evMap = eventsByDay(t0, to7, false), dMap = duesByDay(t0, to7);
+  const days7 = [...new Set([...Object.keys(evMap), ...Object.keys(dMap)])].sort();
+  const weekHtml = days7.length ? `<section class="card" style="margin-bottom:16px"><div class="card-h"><span class="ic">${UI.cal}</span><h2>Próximos 7 días</h2><button class="btn ghost sm spacer" data-act="go" data-v="agenda">Agenda ›</button></div>
+    <div class="list">${days7.map(d => `<div class="month-h">${esc(d === t0 ? "Hoy" : d === ymdShift(t0, 1) ? "Mañana" : dayLabel(d))}</div>${(dMap[d] || []).map(dueEvRow).join("")}${(evMap[d] || []).map(x => evRow({...x, day:d}, false)).join("")}`).join("")}</div></section>` : "";
+  // Lista rápida: agregar sin salir de Inicio
+  const lists = sortedLists(); const QL = S.lists[S.listId] || lists.find(l => /compra|s[uú]per/i.test(l.name)) || lists[0];
+  const qItems = QL ? Object.values(S.items).filter(i => !i.done && i.list === QL.id).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)) : [];
+  const listHtml = `<section class="card" style="margin-bottom:16px"><div class="card-h"><span class="ic">${UI.list}</span><h2>${esc(QL ? QL.name : "Lista de compras")}</h2>${QL ? `<button class="btn ghost sm spacer" data-act="go" data-v="listas">Ver ›</button>` : ""}</div>
+    <form class="add-row" id="homeItemForm" data-list="${esc(QL ? QL.id : "")}"><input class="input" name="item" maxlength="120" placeholder="Agregar${QL ? " a " + esc(QL.name) : " a Compras"}…" autocomplete="off"><button class="btn primary" type="submit">Agregar</button></form>
+    ${qItems.length ? `<div class="list" style="margin-top:8px">${qItems.slice(0, 5).map(i => checkItem(i, false)).join("")}</div>${qItems.length > 5 ? `<p class="small muted" style="margin:8px 0 0">Y ${qItems.length - 5} más.</p>` : ""}` : ""}</section>`;
   const nowHM = `${pad(new Date().getHours())}:${pad(new Date().getMinutes())}`;
   const nextEv = up.find(x => x.day > t0 || (!x.e.allDay && (x.e.start || "") >= nowHM));
+  const moneyS = (v, c) => (c === "ARS" ? "$" : c + " ") + new Intl.NumberFormat("es-AR", {notation:"compact", maximumFractionDigits:1}).format(v);
+  const netShort = netList.length ? netList.slice(0, 1).map(([c, v]) => (v > 0 ? "+" : "−") + moneyS(Math.abs(v), c)).join("") : "A mano";
   return `<section class="hero">
       <div class="eyebrow">${esc(dayLabel(t0))}</div>
       <h1>${hi}, ${esc(me.name)}</h1>
       <div class="hero-stats">
-        <button class="hero-stat" data-act="go" data-v="cuentas"><div class="eyebrow">Entre ustedes</div><b>${esc(netTxt)}</b><small>${groups.length} ${groups.length === 1 ? "grupo" : "grupos"}</small></button>
-        <button class="hero-stat" data-act="go" data-v="agenda"><div class="eyebrow">Hoy</div><b>${todayEvs.length ? todayEvs.length + (todayEvs.length === 1 ? " evento" : " eventos") : "Día libre"}</b><small>${nextEv ? "Próximo: " + esc(evTitle(nextEv.e)) : "Nada próximo en agenda"}</small></button>
-        <button class="hero-stat" data-act="go" data-v="finanzas"><div class="eyebrow">Gastaste en ${esc(MONTHS[new Date().getMonth()])}</div><b>${esc(money(spent, cur))}</b><small>${budgetTot ? "de " + esc(money(budgetTot, cur)) + " presupuestados" : inc ? "Ingresos: " + esc(money(inc, cur)) : "Solo lo ves vos"}</small></button>
+        <button class="hero-stat" data-act="go" data-v="cuentas"><div class="eyebrow">Entre ustedes</div><b>${esc(netShort)}</b><small>${esc(netTxt)}</small></button>
+        <button class="hero-stat" data-act="go" data-v="agenda"><div class="eyebrow">Hoy</div><b>${todayEvs.length ? todayEvs.length + (todayEvs.length === 1 ? " evento" : " eventos") : "Libre"}</b><small>${nextEv ? "Próximo: " + esc(evTitle(nextEv.e)) : "Nada próximo en agenda"}</small></button>
+        <button class="hero-stat" data-act="go" data-v="finanzas"><div class="eyebrow">Gastaste</div><b>${esc(moneyS(spent, cur))}</b><small>${budgetTot ? "de " + esc(money(budgetTot, cur)) + " presupuestados" : inc ? "Ingresos: " + esc(money(inc, cur)) : "En " + esc(MONTHS[new Date().getMonth()]) + " · solo lo ves vos"}</small></button>
       </div>
     </section>
     ${thanksCard(me.id)}
-    ${closeCard() || sinceCard(me.id)}
-    ${weekHtml}
-  <div class="grid g2" style="align-items:start">
-    <section class="card"><div class="card-h"><span class="ic">${UI.cal}</span><h2>Próximos 14 días</h2><button class="btn ghost sm spacer" data-act="go" data-v="agenda">Ver agenda ›</button></div>
-      <div class="list">${up.length ? up.map(x => evRow(x, true)).join("") : `<div class="empty"><b>Agenda libre</b>Cargá un plan y elegí si lo ven todos, solo ven "ocupado" o es solo tuyo.</div>`}</div></section>
-    <div class="grid" style="align-content:start">
-      ${groups.length === 1 ? "" : `<section class="card"><div class="card-h"><span class="ic b">${UI.people}</span><h2>Cuentas en común</h2><button class="btn ghost sm spacer" data-act="go" data-v="cuentas">Ver ›</button></div>
-        <div class="list">${balHtml || `<div class="empty"><b>Todavía no hay gastos en común</b>Creá un grupo en Cuentas y vean siempre cómo están.</div>`}</div></section>`}
-      ${listHtml}
-    </div>
-  </div>`;
+    ${closeCard()}${sinceCard(me.id)}
+    ${todoHtml || `<section class="card" style="margin-bottom:16px"><div class="empty" style="padding:14px"><b>Todo al día</b>Están a mano y no hay nada pendiente.</div></section>`}
+    ${listHtml}
+    ${weekHtml}`;
 };
 
 V.agenda = () => {
@@ -1255,7 +1263,7 @@ V.agenda = () => {
   const head = `<div class="page-head"><h1>Agenda</h1>${helpBtn(S.calMode === "fechas" ? "fechas" : "agenda")}
     <div class="seg" role="group" aria-label="Vista"><label><input type="radio" name="calmode" value="mes" data-chg="calMode" ${S.calMode === "mes" ? "checked" : ""}><span>Mes</span></label><label><input type="radio" name="calmode" value="lista" data-chg="calMode" ${S.calMode === "lista" ? "checked" : ""}><span>Lista</span></label><label><input type="radio" name="calmode" value="fechas" data-chg="calMode" ${S.calMode === "fechas" ? "checked" : ""}><span>Fechas</span></label></div>
     ${S.calMode === "fechas" ? '<button class="btn primary" data-act="newDue">+ Fecha</button>' : '<button class="btn primary" data-act="newEvent">+ Evento</button>'}</div>`;
-  if (S.calMode === "fechas") return head + fechasBody();
+  if (S.calMode === "fechas") return head + fechasBody() + mascotasBody();
   if (S.calMode === "lista") {
     const from = t, to = ymd(addDays(new Date(), 60));
     const mp = eventsByDay(from, to), dm = duesByDay(from, to); const days = [...new Set([...Object.keys(mp), ...Object.keys(dm)])].sort();
@@ -1282,7 +1290,7 @@ V.agenda = () => {
       <div class="cal">${cells}</div>
     </section>
     <section class="card" id="dayPanel"><div class="row"><h2 style="margin:0;text-transform:capitalize">${esc(dayLabel(S.selDay))}</h2><button class="btn sm spacer" data-act="newDueOn" data-d="${S.selDay}">+ Fecha</button><button class="btn sm" data-act="newEvent" data-d="${S.selDay}">+ Evento</button></div>
-      <div class="list" style="margin-top:8px">${selD.map(dueEvRow).join("")}${sel.length ? sel.map(x => evRow({...x, day:S.selDay}, false)).join("") : selD.length ? "" : `<div class="empty"><b>Día libre</b>Tocá + Agregar para sumar un plan.</div>`}</div>
+      <div class="list" style="margin-top:8px">${selD.map(dueEvRow).join("")}${sel.length ? sel.map(x => evRow({...x, day:S.selDay}, false)).join("") : selD.length ? "" : `<div class="empty"><b>Día libre</b>Tocá + Evento para sumar un plan.</div>`}</div>
       ${sel.some(x => x.e.busy) ? `<p class="small muted" style="margin:12px 0 0">Los bloques rayados son horarios ocupados de otra persona que eligió no mostrar los detalles.</p>` : ""}
     </section></div>`;
 };
@@ -1307,11 +1315,13 @@ V.cuentas = () => {
     const total = groupExpenses(g.id).filter(e => isExp(e) && e.cur === cur && !(e.cuota && e.date > todayS())).reduce((s, e) => s + e.amount, 0);
     if (Object.values(net).every(v => Math.abs(v) < 0.005)) return `<div class="row" style="padding:10px 0;border-bottom:1px solid var(--line)"><span class="eyebrow">${esc(cur)}</span><span class="impact mut">Están a mano</span><span class="small muted spacer">Gastaron <b class="money">${esc(money(total, cur))}</b></span></div>`;
     return `<div style="margin-bottom:14px"><div class="row" style="margin-bottom:6px"><span class="eyebrow">${esc(cur)}</span><span class="small muted spacer">Gasto total del grupo: <b class="money">${esc(money(total, cur))}</b></span></div>
+      ${tr.length ? `<div><div class="eyebrow" style="margin-bottom:6px">Para quedar a mano</div>${tr.map(t => `<div class="transfer">${avatar(t.from)}<b>${esc(pName(t.from))}</b><span class="arrow">le pasa</span><b class="money" style="font-family:var(--font-display);font-size:17px">${esc(money(t.amount, cur))}</b><span class="arrow">a</span>${avatar(t.to)}<b>${esc(pName(t.to))}</b>
+        <span class="spacer">${settleBtns({...t, cur, group:g.id}, me)}</span></div>`).join("")}</div>` : `<p class="small muted">Están a mano en ${esc(cur)}.</p>`}
+      <details class="bal-details" style="margin-top:8px"><summary class="small muted" style="cursor:pointer">Ver el detalle por persona</summary>
       ${ids.map(id => { const v = net[id] || 0; const w = Math.abs(v) / mx * 50;
         return `<div class="bal-row"><div class="row" style="flex-wrap:nowrap;min-width:0">${avatar(id)}<div style="min-width:0"><div style="font-weight:600">${esc(pName(id))}${id === me ? " (yo)" : ""}</div><div class="small money ${v > 0.004 ? "pill-pos" : v < -0.004 ? "pill-neg" : "muted"}">${v > 0.004 ? "A favor " + esc(money(v, cur)) : v < -0.004 ? "A pagar " + esc(money(-v, cur)) : "A mano"}</div></div></div>
           <div class="bal-bar"><i style="${v >= 0 ? `left:50%;width:${w}%;background:var(--pos)` : `right:50%;width:${w}%;background:var(--neg)`}"></i></div></div>`; }).join("")}
-      ${tr.length ? `<div style="margin-top:10px"><div class="eyebrow" style="margin-bottom:6px">Para quedar a mano</div>${tr.map(t => `<div class="transfer">${avatar(t.from)}<b>${esc(pName(t.from))}</b><span class="arrow">le pasa</span><b class="money" style="font-family:var(--font-display);font-size:17px">${esc(money(t.amount, cur))}</b><span class="arrow">a</span>${avatar(t.to)}<b>${esc(pName(t.to))}</b>
-        <button class="btn sm spacer" data-act="settle" data-from="${esc(t.from)}" data-to="${esc(t.to)}" data-amt="${t.amount}" data-cur="${esc(cur)}">Registrar pago</button></div>`).join("")}</div>` : `<p class="small muted">Están a mano en ${esc(cur)}.</p>`}
+      </details>
     </div>`;
   }).join("") : `<div class="empty"><b>Todavía no hay gastos</b>Cargá el primero y acá ves al toque quién le pasa cuánto a quién.</div>`;
   let lastM = "", list = "";
@@ -1335,16 +1345,14 @@ V.cuentas = () => {
       <div class="amt"><div class="money" style="font-weight:700">${esc(money(e.amount, e.cur))}</div>${impact}</div></div>`;
   }
   return `<div class="page-head"><h1>Cuentas</h1>${helpBtn("cuentas")}
-      <select class="input" style="width:auto" data-chg="group" aria-label="Grupo">${gs.map(x => `<option value="${esc(x.id)}" ${x.id === g.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
-      <button class="btn sm" data-act="newGroup">+ Grupo</button>
+      <select class="input" style="width:auto;max-width:60vw" data-chg="group" aria-label="Grupo">${gs.map(x => `<option value="${esc(x.id)}" ${x.id === g.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}<option disabled>──────</option><option value="__edit">✎ Editar ${esc(g.name)} (${(g.members || []).length} ${(g.members || []).length === 1 ? "persona" : "personas"})</option><option value="__new">+ Nuevo grupo…</option></select>
       <button class="btn primary" data-act="newExpense">+ Gasto</button></div>
-    <p class="muted small" style="margin:-8px 0 14px">Integrantes: ${(g.members || []).map(id => esc(pName(id))).join(", ") || "nadie"} · <button class="btn ghost sm" style="padding:0" data-act="editGroup" data-id="${esc(g.id)}">Editar grupo</button></p>
     <div class="grid g2" style="align-items:start">
       <section class="card"><div class="card-h"><span class="ic b">${UI.scale}</span><h2>Balance</h2>${curs.length ? `<button class="btn sm spacer" data-act="copySummary" data-id="${esc(g.id)}">Copiar resumen</button>` : ""}</div>${balCard}${fxCard(g, bal)}</section>
       <section class="card"><div class="seg" role="group" aria-label="Sección" style="margin-bottom:12px">${[["mov","Historial"],["resumen","Resumen"],["fijos","Fijos"]].map(([v, l]) => `<label><input type="radio" name="ctab" value="${v}" data-chg="cTab" ${S.cTab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
         ${S.cTab === "resumen" ? groupSummary(g) : S.cTab === "fijos" ? groupFixed(g) : `
-        <div class="row" style="margin-bottom:6px"><input class="input" id="expSearch" data-inp="q" placeholder="Buscar" value="${esc(S.q)}" style="flex:1;width:auto;min-width:140px">
-        <select class="input" style="width:auto" data-chg="qCat" aria-label="Categoría"><option value="">Todas</option>${c.expCats.map(k => `<option value="${esc(k.id)}" ${S.qCat === k.id ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select></div>
+        ${groupExpenses(g.id).length > 15 || q || S.qCat ? `<div class="row" style="margin-bottom:6px"><input class="input" id="expSearch" data-inp="q" placeholder="Buscar" value="${esc(S.q)}" style="flex:1;width:auto;min-width:140px">
+        <select class="input" style="width:auto" data-chg="qCat" aria-label="Categoría"><option value="">Todas</option>${c.expCats.map(k => `<option value="${esc(k.id)}" ${S.qCat === k.id ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select></div>` : ""}
         <div class="list">${list || `<div class="empty"><b>Todavía no hay gastos</b>${q || S.qCat ? "Nada coincide con el filtro." : "Cargá el primero con + y la app hace las cuentas."}</div>`}</div>
         ${futureC ? `<p class="small muted" style="margin:10px 4px 0">${futureC} ${futureC === 1 ? "cuota futura programada" : "cuotas futuras programadas"}: cada una se suma al balance en su mes.</p>` : ""}
         ${totalN > exps.length ? `<div class="row" style="justify-content:center;margin-top:10px"><button class="btn" data-act="moreExp">Ver más (${totalN - exps.length})</button></div>` : ""}`}</section>
@@ -1373,23 +1381,14 @@ V.finanzas = () => {
     return {m, v:r2(v)}; }).filter(x => x.v > 0);
   const cuotasHtml = cuotaRows.length ? `<section class="card"><div class="card-h"><span class="ic">${UI.cal}</span><h2>Cuotas que vienen</h2></div><p class="small muted" style="margin:0 0 6px">Tu parte de lo que ya está comprometido, en ${esc(cur)}.</p>${cuotaRows.map(x => `<div class="sum-row"><span style="text-transform:capitalize">${esc(ymLabel(x.m))}</span><b class="money">${esc(money(x.v, cur))}</b></div>`).join("")}</section>` : "";
   const usedCurs = [...new Set([p.cur, ...Object.values(S.priv.tx).map(t => t.cur), ...Object.values(S.expenses).map(e => e.cur)].filter(Boolean))];
-  return `<div class="page-head"><h1>Mis finanzas</h1>${helpBtn("finanzas")}
-      <span class="small muted">Solo vos ves esta sección.</span>
-      <button class="btn primary" data-act="newTx">+ Movimiento</button></div>
-    <div class="row" style="margin-bottom:14px">
-      <button class="icon-btn" data-act="finNav" data-n="-1" aria-label="Mes anterior">‹</button>
-      <h2 style="margin:0;text-transform:capitalize;min-width:160px;text-align:center">${esc(ymLabel(ym))}</h2>
-      <button class="icon-btn" data-act="finNav" data-n="1" aria-label="Mes siguiente">›</button>
-      <select class="input spacer" style="width:auto" data-chg="finCur" aria-label="Moneda">${usedCurs.filter(x => CURS.includes(x)).map(x => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
-    </div>
-    <div class="grid g3 stats" style="margin-bottom:16px">
-      <div class="card stat"><span class="si" style="--c:var(--pos)">${UI.up}</span><div class="eyebrow">Ingresos</div><div class="big money">${esc(money(inc, cur))}</div></div>
-      <div class="card stat"><span class="si" style="--c:var(--accent)">${UI.down}</span><div class="eyebrow">Gastos propios</div><div class="big money">${esc(money(own, cur))}</div></div>
-      <div class="card stat"><span class="si" style="--c:var(--accent2)">${UI.share}</span><div class="eyebrow">Tu parte compartida</div><div class="big money">${esc(money(shared, cur))}</div><div class="small muted">Lo que te corresponde, no lo que pagaste</div></div>
-      <div class="card stat"><span class="si" style="--c:var(--ink)">${UI.wallet}</span><div class="eyebrow">Te queda</div><div class="big money ${net < 0 ? "pill-neg" : ""}">${esc(money(net, cur))}</div></div>
-    </div>
-    <div class="grid g2" style="align-items:start;margin-bottom:16px">${projectionHtml(cur)}${walletsHtml(cur)}</div>
-    <div class="grid g2" style="align-items:start">
+  const tab = S.fTab || "mes";
+  // Lo gastado en otras monedas, pasado a pesos con la cotización guardada
+  let otherTxt = "";
+  if (cur === BASE) { const oth = usedCurs.filter(x => x !== BASE).map(x => ({x, v:monthItems(ym, x).filter(i => i.type === "gasto").reduce((s2, i) => s2 + i.amount, 0)})).filter(o => o.v > 0);
+    if (oth.length) { const conv = oth.filter(o => fxRate(o.x)), miss = oth.filter(o => !fxRate(o.x)); const tot = r2(own + shared + conv.reduce((s2, o) => s2 + o.v * fxRate(o.x), 0));
+      otherTxt = `<p class="small muted" style="margin:-6px 0 14px">${conv.length ? `Con lo gastado en ${conv.map(o => esc(money(o.v, o.x))).join(" y ")} (a la cotización guardada), en total gastaste <b class="money">${esc(money(tot, BASE))}</b>.` : ""}${miss.length ? ` También gastaste ${miss.map(o => esc(money(o.v, o.x))).join(" y ")}: <button class="linkbtn" data-act="go" data-v="cuentas">cargá la cotización</button> para sumarlo.` : ""}</p>`; } }
+  const seg = `<div class="seg" role="group" aria-label="Sección" style="margin-bottom:14px">${[["mes","Mes"],["analisis","Análisis"],["metas","Metas"]].map(([v, l]) => `<label><input type="radio" name="ftab" value="${v}" data-chg="fTab" ${tab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>`;
+  const body = tab === "analisis" ? `<div class="grid g2" style="align-items:start;margin-bottom:16px">
       <section class="card"><div class="card-h"><span class="ic">${UI.chart}</span><h2>Por categoría</h2><button class="btn sm spacer" data-act="budgets">Presupuestos</button></div>
         <div style="margin-top:8px">${catIds.length ? catIds.map(id => { const k = catOf(c.expCats, id); const v = byCat[id] || 0; const b = Number(budgets[cur + ":" + id] || 0);
           const pct = b ? v / b * 100 : v / mxCat * 100;
@@ -1400,49 +1399,63 @@ V.finanzas = () => {
         <div class="eyebrow" style="margin-top:18px">Gasto total, últimos 6 meses</div>
         <div class="trend">${trend.map(t => `<div class="${t.m === ym ? "cur" : ""}" title="${esc(ymLabel(t.m))}: ${esc(money(t.v, cur))}"><span class="money">${t.v ? esc(compact(t.v)) : ""}</span><i style="height:${(t.v / mxT * 80).toFixed(1)}%"></i><span>${MON_S[Number(t.m.slice(5)) - 1]}</span></div>`).join("")}</div>
       </section>
+      ${projectionHtml(cur)}</div>
+    <div class="grid g2" style="align-items:start">${walletsHtml(cur)}${cuotasHtml}</div>`
+    : tab === "metas" ? `<div class="grid g2" style="align-items:start">
+      <section class="card"><div class="card-h"><span class="ic">${UI.up}</span><h2>Metas de ahorro</h2><button class="btn sm spacer" data-act="newGoal">+ Meta</button></div>
+        ${allGoals().length ? `<div class="goal-grid">${allGoals().map(goalCard).join("")}</div>` : `<div class="empty"><b>Sin metas todavía</b>Creá una para las vacaciones, la mudanza o un fondo de emergencia. Puede ser compartida o solo tuya.</div>`}</section>
+    </div>`
+    : `    <div class="grid g3 stats" style="margin-bottom:16px">
+      <div class="card stat"><span class="si" style="--c:var(--pos)">${UI.up}</span><div class="eyebrow">Ingresos</div><div class="big money">${esc(money(inc, cur))}</div></div>
+      <div class="card stat"><span class="si" style="--c:var(--accent)">${UI.down}</span><div class="eyebrow">Gastos propios</div><div class="big money">${esc(money(own, cur))}</div></div>
+      <div class="card stat"><span class="si" style="--c:var(--accent2)">${UI.share}</span><div class="eyebrow">Tu parte compartida</div><div class="big money">${esc(money(shared, cur))}</div><div class="small muted">Lo que te corresponde, no lo que pagaste</div></div>
+      <div class="card stat"><span class="si" style="--c:var(--ink)">${UI.wallet}</span><div class="eyebrow">Te queda</div><div class="big money ${net < 0 ? "pill-neg" : ""}">${esc(money(net, cur))}</div></div>
+    </div>
+${otherTxt}
+    <div class="grid g2" style="align-items:start">
       <section class="card"><div class="card-h"><span class="ic b">${UI.list}</span><h2>Movimientos del mes</h2></div><div class="list">${its.length ? its.map(i => {
         const cats = i.type === "ingreso" ? c.incCats : c.expCats; const k = catOf(cats, i.cat);
         return `<div class="item click" data-act="${i.src === "shared" ? "editExpense" : "editTx"}" data-id="${esc(i.ref.id)}">${catIcon(k)}
           <div class="grow"><div class="t">${esc(i.desc || k.name)}</div><div class="s">${esc(shortDate(i.date))} · ${esc(k.name)}${i.src === "shared" ? " · tu parte en " + esc(S.groups[i.ref.group]?.name || "grupo") : ""}</div></div>
           <div class="amt money ${i.type === "ingreso" ? "pill-pos" : ""}" style="font-weight:700">${i.type === "ingreso" ? "+" : "−"}${esc(money(i.amount, cur))}</div></div>`; }).join("") : `<div class="empty"><b>Nada este mes</b>Tus ingresos y gastos personales aparecen acá, junto con tu parte de los compartidos.</div>`}</div></section>
-    </div>
-    <div class="grid g2" style="align-items:start;margin-top:16px">
-      <section class="card"><div class="card-h"><span class="ic">${UI.up}</span><h2>Metas de ahorro</h2><button class="btn sm spacer" data-act="newGoal">+ Meta</button></div>
-        ${allGoals().length ? `<div class="goal-grid">${allGoals().map(goalCard).join("")}</div>` : `<div class="empty"><b>Sin metas todavía</b>Creá una para las vacaciones, la mudanza o un fondo de emergencia. Puede ser compartida o solo tuya.</div>`}</section>
-      ${cuotasHtml}
       <section class="card"><div class="card-h"><span class="ic b">${UI.wallet}</span><h2>Mis fijos mensuales</h2></div>
         <p class="small muted" style="margin:0 0 6px">Estado de ${esc(ymLabel(todayS().slice(0, 7)))}. Para sumar uno, al cargar un movimiento marcá "Se repite todos los meses".</p>
         <div class="list">${myTpl().length ? myTpl().map(t => fixedRow(t, "tpl", todayS().slice(0, 7))).join("") : `<div class="empty"><b>Sin fijos todavía</b>Sueldo, alquiler, gimnasio: al cargarlos marcá "Se repite todos los meses" y te los recordamos.</div>`}</div></section>
     </div>`;
+  return `<div class="page-head"><h1>Mis finanzas</h1>${helpBtn("finanzas")}
+      <span class="small muted">Solo vos ves esta sección.</span>
+      <button class="btn primary" data-act="newTx">+ Movimiento</button></div>
+    <div class="row" style="margin-bottom:14px">
+      <button class="icon-btn" data-act="finNav" data-n="-1" aria-label="Mes anterior">‹</button>
+      <h2 style="margin:0;text-transform:capitalize;min-width:160px;text-align:center">${esc(ymLabel(ym))}</h2>
+      <button class="icon-btn" data-act="finNav" data-n="1" aria-label="Mes siguiente">›</button>
+      <select class="input spacer" style="width:auto" data-chg="finCur" aria-label="Moneda">${usedCurs.filter(x => CURS.includes(x)).map(x => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+    </div>
+    ${seg}${body}`;
 };
 function compact(v) { return v >= 1e6 ? (v / 1e6).toFixed(1).replace(".", ",") + "M" : v >= 1e3 ? Math.round(v / 1e3) + "k" : Math.round(v); }
 
 V.ajustes = () => {
   const me = meP(); const p = prefs(); const c = cfg();
+  const avisosPending = FB.ok && !p.tgChat && !Object.keys(S.priv.push || {}).length;
   const catEditor = (key, title) => `<section class="card"><h2>${title}</h2><div>${c[key].map((k, i) => `<div class="set-row">
       <input type="color" value="${esc(k.color)}" data-chg="catColor" data-key="${key}" data-i="${i}" aria-label="Color">
       <input class="input" id="cat-${key}-${i}" value="${esc(k.name)}" data-chg="catName" data-key="${key}" data-i="${i}" aria-label="Nombre">
       <button class="btn sm danger" data-act="delCat" data-key="${key}" data-i="${i}" ${c[key].length < 2 ? "disabled" : ""}>Quitar</button></div>`).join("")}</div>
     <div class="row" style="margin-top:8px"><input class="input" id="newcat-${key}" placeholder="Nueva categoría" style="flex:1;width:auto"><button class="btn sm" data-act="addCat" data-key="${key}">Agregar</button></div></section>`;
   return `<div class="page-head"><h1>Ajustes</h1></div>
+  <div class="chips-nav" style="display:flex;gap:6px;flex-wrap:wrap;margin:-6px 0 14px">${[["sg-vos","Vos"],["sg-pareja","Pareja y acceso"],["sg-avisos","Avisos"],["sg-datos","Datos"]].map(([id, l]) => `<button class="chip" data-act="jump" data-id="${id}">${l}</button>`).join("")}</div>
   <div class="grid g2" style="align-items:start">
+    ${avisosPending ? `<h2 class="set-group" id="sg-avisos">Avisos</h2>${avisosCard()}` : ""}
+    <h2 class="set-group" id="sg-vos">Vos</h2>
     <section class="card"><h2>Tu perfil</h2>
       ${FB.ok ? `<div class="set-row"><span style="flex:1" class="small muted">Entraste como <b>${esc(S.email || "")}</b></span><button class="btn sm" data-act="signOut">Cerrar sesión</button></div>` : ""}
       <div class="set-row"><label class="field" style="flex:1"><span>Nombre</span><input class="input" id="meName" value="${esc(me.name)}" data-chg="meName" maxlength="30"></label></div>
+      <div class="set-row"><label class="field" style="flex:1"><span>Tu alias para transferencias (opcional)</span><input class="input" value="${esc(me.alias || "")}" data-chg="meAlias" maxlength="40" placeholder="por ejemplo: aldi.mp" autocomplete="off"><small class="muted">Lo ve tu pareja al lado de "Para quedar a mano", con un botón para copiarlo. Nunca pongas el CBU ni datos de la tarjeta.</small></label></div>
       <div class="set-row"><div class="field"><span>Color</span><div data-chg-wrap="meColor">${swatches("mecolor", me.color)}</div></div></div>
       <div class="set-row"><label class="field"><span>La semana empieza el</span><select class="input" data-chg="weekStart"><option value="1" ${p.weekStart == 1 ? "selected" : ""}>lunes</option><option value="0" ${p.weekStart == 0 ? "selected" : ""}>domingo</option></select></label>
         <label class="field"><span>Moneda principal</span><select class="input" data-chg="prefCur">${CURS.map(x => `<option ${x === p.cur ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
     </section>
-    ${FB.ok ? accessCard() + avisosCard() : `<section class="card"><h2>Compartir con tu pareja</h2>
-      <ol class="steps small">
-        <li>Arriba a la derecha de esta página tocá <b>Compartir</b>.</li>
-        <li>Invitá a tu pareja por mail con permiso de <b>Editor</b> (necesita una cuenta de Claude, la gratuita alcanza).</li>
-        <li>Cuando entre, elige su perfil o crea uno y ya ven lo mismo.</li>
-      </ol>
-      <p class="small hint-warn" style="font-weight:600">Elegí el permiso Editor: con Lector tu pareja solo puede mirar, no cargar.</p>
-      <button class="btn" data-act="copyInvite">Copiar mensaje para tu pareja</button>
-      <p class="small muted">Lo que marques como <b>Solo yo</b> (eventos y Mis finanzas) se guarda en tu espacio privado y no se comparte. Como quien creó la página puede cambiar su código, invitá solo a gente de confianza.</p>
-    </section>`}
     <section class="card"><h2>Privacidad y seguridad</h2>
       <div class="row" style="margin-bottom:6px"><button class="btn sm" data-act="showPrivacy">Cómo cuidamos tus datos</button><button class="btn sm" data-act="showTerms">Términos de uso</button></div>
       <div class="set-row"><label class="row" style="flex:1;font-weight:600"><input type="checkbox" data-chg="discreetChk" ${store.get("discreet", false) ? "checked" : ""}> Ocultar montos en este dispositivo</label></div>
@@ -1451,6 +1464,8 @@ V.ajustes = () => {
       <div class="set-row"><span style="flex:1"><b>Terminar de compartir</b><br><span class="small muted">Si se separan o querés salir del espacio</span></span><button class="btn sm" data-act="leaveSheet">Ver pasos</button></div>
       <div style="margin-top:8px">${HELP_HTML}</div>
     </section>
+    <h2 class="set-group" id="sg-pareja">Pareja y grupos</h2>
+    ${accessCard()}
     <section class="card"><h2>Personas</h2>
       <p class="small muted" style="margin-top:-4px">Podés sumar gente sin cuenta (amigos de un viaje) para dividir gastos con ellos.</p>
       ${peopleList().map(x => `<div class="set-row">${avatar(x.id)}<input class="input" id="pn-${esc(x.id)}" value="${esc(x.name)}" data-chg="personName" data-id="${esc(x.id)}" aria-label="Nombre">
@@ -1462,8 +1477,9 @@ V.ajustes = () => {
       ${Object.values(S.groups).map(g => `<div class="set-row"><div class="grow" style="flex:1"><b>${esc(g.name)}</b><div class="small muted">${(g.members || []).map(pName).map(esc).join(", ")}</div></div><button class="btn sm" data-act="editGroup" data-id="${esc(g.id)}">Editar</button></div>`).join("") || '<p class="muted small">Todavía no hay grupos. Creá uno para dividir gastos.</p>'}
       <div style="margin-top:8px"><button class="btn sm" data-act="newGroup">+ Grupo</button></div>
     </section>
+    ${avisosPending || !FB.ok ? "" : `<h2 class="set-group" id="sg-avisos">Avisos</h2>${avisosCard()}`}
+    <h2 class="set-group" id="sg-datos">Datos</h2>
     <section class="card"><h2>Bajar una copia</h2>
-      ${FB.ok ? "" : (() => { const n = ["people", "groups", "events", "expenses", "config", "lists", "items", "fixed", "goals", "contribs", "chores", "choreLog"].reduce((a, c) => a + Object.keys(S[c] || {}).length + Object.keys(S.trashS?.[c] || {}).length, 0); return `<p class="small ${n > 18000 ? "hint-warn" : "muted"}" style="margin:-4px 0 8px">Usan ${n.toLocaleString("es-AR")} de 25.000 lugares de guardado compartidos${n > 18000 ? ". Conviene bajar una copia y borrar cosas viejas." : "."}</p>`; })()}
       <p class="small muted" style="margin-top:-4px">Bajá una copia para guardarla o abrirla en Excel. Incluye lo compartido y lo tuyo privado; nunca lo privado de otras personas. Con "Importar una copia" traés lo que tenías en la versión anterior.</p>
       <div class="export-btns">
         <button class="btn" data-act="exportShared">${UI.people} Gastos compartidos (planilla)</button>
@@ -1476,9 +1492,11 @@ V.ajustes = () => {
         return `<div class="item"><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(t.type)} · borrado el ${esc(shortDate(ymd(new Date(t.at))))}${t.by && S.people[t.by] && t.by !== meId() ? " por " + esc(pName(t.by)) : ""} · se elimina en ${left} ${left === 1 ? "día" : "días"}</div></div>
           <button class="btn sm" data-act="restoreTrash" data-path="${esc(t.paths[0])}">Restaurar</button>${["Gasto", "Pago", "Conversión"].includes(t.type) || (t.by && t.by !== meId()) ? "" : `<button class="x-btn" data-act="armDo" data-do="purgeTrash" data-path="${esc(t.paths[0])}" aria-label="Borrar para siempre ${esc(t.name)}" title="Borrar para siempre">×</button>`}</div>`; }).join("")}</div>`
         : `<div class="empty"><b>La papelera está vacía</b>Lo que borres queda acá ${TRASH_DAYS} días, por si te arrepentís.</div>`; })()}</section>
+    <details class="card" style="grid-column:1/-1"><summary style="cursor:pointer;font-weight:700">Categorías de agenda, gastos e ingresos</summary><div class="grid g2" style="align-items:start;margin-top:12px">
     ${catEditor("calCats", "Categorías de agenda")}
     ${catEditor("expCats", "Categorías de gastos")}
     ${catEditor("incCats", "Categorías de ingresos")}
+    </div></details>
   </div>`;
 };
 
@@ -1624,12 +1642,6 @@ function buildExport(kind) {
 }
 async function exportData(kind) {
   const f = buildExport(kind);
-  let dl = null;
-  try { if (window.claude && typeof window.claude.use === "function") dl = await window.claude.use("downloads"); } catch {}
-  if (dl) {
-    try { await dl.save(f); toast("Listo, ya se descargó"); savePrefs({lastBackup:Date.now()}).catch(() => {}); return; }
-    catch (e) { if (e && e.code === "declined") return; if (e && e.code === "rate_limited") { toast("Tenés una descarga esperando que la aceptes. Confirmala y probá de nuevo."); return; } }
-  }
   try { downloadFile(f); toast("Listo, ya se descargó"); savePrefs({lastBackup:Date.now()}).catch(() => {}); } catch { showText("Copiá tu respaldo", f.data); }
 }
 
@@ -1731,7 +1743,7 @@ function choreRow(c) {
     <div class="grow" data-act="editChore" data-id="${esc(c.id)}" style="cursor:pointer"><div class="t">${esc(c.name)}</div>
       <div class="s">${st.who ? `<span class="dot" style="--c:${esc(pColor(st.who))};width:8px;height:8px;margin-right:5px;vertical-align:1px"></span>` : ""}<span ${st.who === me ? 'style="color:var(--ink);font-weight:700"' : ""}>${esc(whoTxt)}</span> · ${esc(choreFreq(c))}${st.who !== me && st.days <= 2 ? ` · <button class="linkbtn" data-act="takeChore" data-id="${esc(c.id)}">La tomo yo</button>` : ""}</div>
       <div style="margin-top:4px">${st.paused ? `<span class="badge mut">En pausa hasta el ${esc(shortDate(c.pausedUntil))}</span>` : st.wk ? wkBadge(st) : dueBadge(st.days)}${st.last ? ` <span class="small muted">Última: ${esc(shortDate(st.last.date))} por ${esc(pName(st.last.by))}</span>` : ""}</div></div>
-    ${st.paused ? "" : `<button class="btn sm ${st.days <= 0 ? "primary" : ""}" data-act="choreDone" data-id="${esc(c.id)}" aria-label="Marcar ${esc(c.name)} como hecha">Hecha ✓</button>`}</div>`;
+    ${st.paused ? "" : `<button class="btn sm ${st.days <= 0 ? "primary" : ""}" data-act="choreDone" data-id="${esc(c.id)}" aria-label="Marcar ${esc(c.name)} como hecha">Hecha ✓</button>`}<button class="icon-btn" data-act="choreMenu" data-id="${esc(c.id)}" aria-label="Más opciones para ${esc(c.name)}">⋯</button></div>`;
 }
 function sortedChores(onlyMine) {
   const me = meId();
@@ -1741,10 +1753,10 @@ function sortedChores(onlyMine) {
 }
 function hogarHead(btn) {
   return `<div class="page-head"><h1>Hogar</h1>${helpBtn("hogar")}
-    <div class="seg hseg" role="group" aria-label="Sección">${[["tareas","Tareas"],["listas","Listas"],["decidir","Decidir"],["mascotas","Mascotas"]].map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+    <div class="seg hseg" role="group" aria-label="Sección">${[["tareas","Tareas"],["listas","Listas"],["decidir","Decidir"]].map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
     ${btn}</div>`;
 }
-V.hogar = () => S.hTab === "listas" ? V.listas() : S.hTab === "decidir" ? V.decidir() : S.hTab === "mascotas" ? V.mascotas() : V.tareas();
+V.hogar = () => S.hTab === "listas" ? V.listas() : S.hTab === "decidir" ? V.decidir() : V.tareas();
 V.tareas = () => {
   const head = hogarHead('<button class="btn primary" data-act="newChore">+ Tarea</button>');
   if (!Object.keys(S.chores).length) return head + `<section class="card"><div class="empty"><b>Organicen las tareas de la casa</b>Cada tarea se repite sola, se turnan entre ustedes y queda registrado quién hizo qué.
@@ -1816,7 +1828,7 @@ function choreSheet(ch) {
     </div>
     <div class="field"><span>Esfuerzo</span><div class="seg">${EFFORT.map(([v, l]) => `<label><input type="radio" name="points" value="${v}" ${Number(c.points) === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div></div>
     ${isNew ? `<label class="field" data-startrow><span>Desde</span><input class="input" type="date" name="start" value="${esc(c.start || todayS())}"></label>` : ""}
-    ${!isNew ? `<button class="btn" type="button" data-act="remindChore" data-id="${esc(c.id)}">🔔 Recordatorio en mi calendario</button>` : ""}
+
     ${!isNew ? `<details class="more" ${c.pausedUntil && c.pausedUntil >= todayS() ? "open" : ""}><summary><span>Pausar, saltear o cambiar el turno</span><span class="sum-val">${c.pausedUntil && c.pausedUntil >= todayS() ? "En pausa" : ""}</span></summary><div class="more-body">
       <label class="field"><span>Pausar hasta (viajes, vacaciones)</span><div class="row" style="flex-wrap:nowrap"><input class="input" type="date" name="pausedUntil" value="${esc(c.pausedUntil && c.pausedUntil >= todayS() ? c.pausedUntil : "")}" style="flex:1">${c.pausedUntil && c.pausedUntil >= todayS() ? `<button class="btn sm" type="button" data-unpause>Quitar pausa</button>` : ""}</div><small class="muted">Mientras está en pausa no aparece como pendiente. Al volver, sigue desde la fecha que corresponda.</small></label>
       <div class="row"><button class="btn" type="button" data-act="skipChore" data-id="${esc(c.id)}">Saltear esta vez</button><span class="small muted">Se pasa a la próxima sin contar como hecha.</span></div>
@@ -1868,19 +1880,32 @@ function choreSheet(ch) {
     S.onDelete = async () => { await softDel("chores/" + c.id); closeSheet(); toast("Tarea movida a la papelera", () => restore("chores/" + c.id)); };
   });
 }
+function choreMenuSheet(c) {
+  const me = meId(), others = peopleList().filter(p => p.id !== me);
+  const b = (act, label, extra = "") => `<button class="btn" type="button" data-act="${act}" data-id="${esc(c.id)}" ${extra} style="justify-content:flex-start">${label}</button>`;
+  openSheet(c.name, `<div class="grid" style="gap:8px">
+    ${b("choreDoneBy", "✓ La hice yo", `data-by="${esc(me)}"`)}
+    ${others.map(p => b("choreDoneBy", `✓ La hizo ${esc(p.name)}`, `data-by="${esc(p.id)}"`)).join("")}
+    ${b("choreTomorrow", "→ Pasarla a mañana")}
+    ${b("skipChore", "↷ Saltear esta vez")}
+    ${b("editChore", "✎ Editar la tarea")}
+  </div>`, null);
+}
 function choresPresetSheet() {
   const existing = new Set(Object.values(S.chores).map(c => c.name.toLowerCase()));
   const list = CHORE_PRESETS.filter(p => !existing.has(p.name.toLowerCase()));
   if (!list.length) { toast("Ya tenés todas las tareas típicas"); return; }
   openSheet("Tareas típicas", `<p class="small muted" style="margin:0">Elegí las que quieras. Después podés cambiar la frecuencia y quién la hace.</p>
     <div class="list">${list.map((p, i) => `<label class="check-item"><input type="checkbox" name="p" value="${i}" checked>${areaIcon(p.area)}<span class="t">${esc(p.name)}<br><span class="small muted">${esc(unitLabel(p.every, p.unit))}</span></span></label>`).join("")}</div>
-    <p class="small muted" style="margin:0">Se turnan entre las personas con cuenta y arrancan repartidas en los próximos días para que no caiga todo junto.</p>
+    ${peopleList().length > 1 ? `<div class="field"><span>¿Cómo se reparten?</span><div class="seg" role="group" aria-label="Reparto"><label><input type="radio" name="rep" value="alt" checked><span>Turnándose</span></label>${peopleList().map(p => `<label><input type="radio" name="rep" value="${esc(p.id)}"><span>${esc(p.id === meId() ? "Todas yo" : "Todas " + p.name)}</span></label>`).join("")}</div></div>` : ""}
+    <p class="small muted" style="margin:0">Arrancan repartidas en los próximos días para que no caiga todo junto.</p>
     <div class="form-actions"><button class="btn primary" type="submit">Agregar seleccionadas</button></div>`, async fd => {
     const picks = fd.getAll("p").map(Number); if (!picks.length) return formErr("Elegí al menos una.");
-    const accounts = peopleList().filter(p => p.uid).map(p => p.id); const who = accounts.length ? accounts : [meId()];
+    const all = peopleList().map(p => p.id); const who = all.length ? all : [meId()]; const rep = fd.get("rep") || "alt";
     let k = 0;
     for (const i of picks) { const p = list[i]; const id = newId(); const span = p.unit === "day" ? p.every : p.unit === "week" ? 7 * p.every : 28 * p.every;
-      await put("chores/" + id, {id, ...p, assign:"rotate", who:who.slice(k % who.length).concat(who.slice(0, k % who.length)), start:ymd(addDays(new Date(), k % span)), createdAt:Date.now() + k}); k++; }
+      const assign = rep === "alt" ? {assign:"rotate", who:who.slice(k % who.length).concat(who.slice(0, k % who.length))} : {assign:"fixed", who:[rep]};
+      await put("chores/" + id, {id, ...p, ...assign, start:ymd(addDays(new Date(), k % span)), createdAt:Date.now() + k}); k++; }
     closeSheet(); toast(`${picks.length} tareas agregadas`);
   });
 }
@@ -1957,7 +1982,6 @@ async function selfHeal() {
   const gs = Object.values(S.groups); const def = S.groups.nosotros || (gs.length === 1 ? gs[0] : null);
   if (def && !(def.members || []).includes(me) && !healed.has(def.id)) { healed.add(def.id); try { await put("groups/" + def.id, {...def, members:[...(def.members || []), me]}); } catch {} }
 }
-const INVITE_TEXT = 'Te invité a "Entre Dos" para organizar juntos los gastos, la agenda y las tareas de la casa. Te va a llegar un mail de Claude con el link: entrá con tu cuenta (o creá una gratis) y elegí tu perfil. Lo que es privado tuyo sigue siendo solo tuyo.';
 
 /* ---------- stage 3: exchange rate, monthly close ---------- */
 const BASE = "ARS";
@@ -2262,6 +2286,7 @@ function dueRow(d) {
   return `<div class="item">${dueIcon(d.cat)}
     <div class="grow" data-act="editDue" data-id="${esc(d.id)}" data-scope="${d.scope}" style="cursor:pointer"><div class="t">${esc(d.title)}${d.scope === "private" ? ' <span class="tag">Solo yo</span>' : ""}${d.cat === "familia" ? (giftOf(d.id)?.idea ? ' <span class="tag" title="Tenés una idea de regalo">🎁</span>' : d.days <= 30 ? ' <span class="small muted">· ¿ya pensaste el regalo?</span>' : "") : ""}</div>
       <div class="s">${esc(who)} · ${esc(dueEvery(d))}${d.scope === "shared" && d.owner !== me ? ` · <button class="linkbtn" data-act="ownDue" data-id="${esc(d.id)}">Me encargo yo</button>` : ""}</div>
+      ${d.cat === "familia" && giftOf(d.id)?.idea ? `<div class="small" style="margin-top:3px">🎁 ${esc(giftOf(d.id).idea)}</div>` : ""}
       <div style="margin-top:4px">${dueDateBadge(d)}</div></div>
     ${near ? `<button class="btn sm primary" data-act="doneDue" data-id="${esc(d.id)}" data-scope="${d.scope}">Ya está</button>` : ""}</div>`;
 }
@@ -2297,7 +2322,7 @@ function dueSheet(d, preset) {
       <textarea class="input" name="giftIdea" maxlength="300" placeholder="Ideas de regalo…">${esc(giftOf(x.id)?.idea || "")}</textarea>
       ${(giftOf(x.id)?.history || []).length ? `<div class="small"><b>Lo que regalaste:</b> ${giftOf(x.id).history.slice().reverse().map(h => `${esc(h.year)}: ${esc(h.text)}`).join(" · ")}</div>` : ""}
       <input class="input" name="giftDone" maxlength="120" placeholder="Este año regalé… (queda en el historial)"></div>
-    ${!isNew ? `<button class="btn" type="button" data-act="remindDue" data-id="${esc(x.id)}" data-scope="${x.scope}">🔔 Recordatorio en mi calendario</button>` : ""}
+    
     <div class="form-actions"><button class="btn primary" type="submit">${isNew ? "Guardar" : "Guardar cambios"}</button>${isNew ? "" : delBtn("due")}</div>`, async fd => {
     const title = (fd.get("title") || "").trim(); if (!title) return formErr("Poné qué vence o qué fecha es.", "title");
     const due = fd.get("due"); if (!YMD.test(due || "")) return formErr("Elegí una fecha.", "due");
@@ -2425,101 +2450,12 @@ function thanksCard(me) {
     <div class="row"><button class="btn sm primary" data-act="seenThanks">❤ Gracias</button><button class="btn sm" data-act="replyThanks" data-id="${esc(from)}">Responder con un gracias</button></div></section>`;
 }
 
-/* Carga rápida con Claude */
-async function nlFill(f, g, members, file) {
-  const msg = f.querySelector("[data-nlmsg]"); const text = (f.elements["nl"]?.value || "").trim();
-  if (!text && !file) { msg.textContent = 'Escribí algo como "pagué 12 lucas de súper, mitad" o sacale una foto al ticket.'; return; }
-  if (file && !prefs().nlConsent && !f.dataset.nlOk) { S.pendingTicket = file; }
-  if (file) { const lim = await S.sample?.limits?.().catch(() => null); if (!lim?.images) { msg.textContent = "Acá no se pueden mandar fotos a Claude. Escribilo en palabras."; return; } }
-  if (!prefs().nlConsent && !f.dataset.nlOk) {
-    msg.innerHTML = `Lo que escribas acá se manda a Claude para completar el formulario y usa tu cuenta de Claude. No incluyas datos sensibles. <button type="button" class="linkbtn" data-nlok>Acepto, completar</button>`; return;
-  }
-  if (!S.sample) { msg.textContent = "Acá no se puede usar Claude. Completalo a mano."; return; }
-  const me = meId(), c = cfg();
-  const prompt = `Convertí un gasto escrito en español de Argentina a JSON para una app de gastos compartidos.
-Hoy es ${todayS()} (${DOWL[new Date().getDay()]}). Moneda por defecto: ${g.cur || prefs().cur}.
-Personas del grupo (id: nombre): ${members.map(id => `${id}: ${pName(id)}`).join("; ")}. Quien escribe es ${pName(me)} (id ${me}).
-Categorías (id: nombre): ${c.expCats.map(k => `${k.id}: ${k.name}`).join("; ")}.
-Reglas: "lucas", "luquitas" o "k" = miles; "mil" multiplica por 1000; "verdes", "dólares", "usd" o "u$s" = USD; "euros" = EUR. "mitad", "a medias", "entre los dos" = split "equal". "todo de X", "para X", "es de X" = split "only:<id de X>". Si no dice cómo se divide, split "default". Si no dice quién pagó, pagó quien escribe. Fechas relativas como "ayer" o "el lunes" se resuelven respecto de hoy; si no hay fecha, hoy. "en N cuotas" = cuotas N; si no, 1. desc: 1 a 4 palabras, con mayúscula inicial.
-Respondé solo con JSON con esta forma: {"desc":"Súper","amount":12000,"cur":"ARS","date":"YYYY-MM-DD","cat":"<id o null>","paidBy":"<id>","split":"equal"|"default"|"only:<id>","cuotas":1}
-${file ? "Leé la foto adjunta: es un ticket, factura o comprobante. Tomá el TOTAL final pagado, el comercio como descripción y la fecha del ticket si se lee. " + (text ? "Indicaciones extra de quien escribe: " : "") : "Texto: "}"""${text.slice(0, 300)}"""`;
-  msg.textContent = "Pensando…"; const btn = f.querySelector("[data-nl]"); btn.disabled = true;
-  try {
-    const r = await S.sample.json(prompt, file ? {modelTier:"default", images:[file]} : {modelTier:"quick"});
-    const amount = Number(r?.amount); const filled = [];
-    if (typeof r?.desc === "string" && r.desc.trim()) { f.desc.value = r.desc.trim().slice(0, 80); filled.push("desc"); }
-    if (Number.isFinite(amount) && amount > 0) { f.amount.value = amtStr(r2(amount)); filled.push("amount"); }
-    if (CURS.includes(r?.cur)) f.cur.value = r.cur;
-    if (typeof r?.date === "string" && YMD.test(r.date)) f.date.value = r.date;
-    if (r?.cat && c.expCats.some(k => k.id === r.cat)) f.cat.value = r.cat;
-    if (members.includes(r?.paidBy)) f.paidBy.value = r.paidBy;
-    f.amount.dispatchEvent(new Event("input", {bubbles:true})); f.cur.dispatchEvent(new Event("change", {bubbles:true}));
-    const sp = String(r?.split || "default");
-    if (sp === "equal") f.querySelector('[data-split="half"]')?.click();
-    else if (sp.startsWith("only:") && members.includes(sp.slice(5))) f.querySelector(`[data-split="all"][data-id="${CSS.escape(sp.slice(5))}"]`)?.click();
-    const nC = parseInt(r?.cuotas, 10); if (nC > 1 && f.elements["cuotas"]) { f.elements["cuotas"].value = Math.min(48, nC); f.elements["cuotas"].closest("details").open = true; }
-    f.dataset.source = "nl";
-    msg.textContent = filled.length >= 2 ? "Revisá y guardá." : "No lo entendí del todo, completá lo que falta.";
-  } catch (e) {
-    const code = e && e.code;
-    if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(code)) { msg.textContent = "No se pudo usar Claude acá. Completalo a mano."; f.querySelector(".nl-box")?.setAttribute("hidden", ""); }
-    else if (code === "rate_limited") msg.textContent = "Claude está ocupado o llegaste al límite. Probá en un rato o completalo a mano.";
-    else if (code !== "cancelled") msg.textContent = "No lo entendí del todo, completá lo que falta.";
-  } finally { btn.disabled = false; }
-}
-
-/* ---------- reminders via Google Calendar + help ---------- */
-const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
-function addMins(hm, mins) { const [h, m] = hm.split(":").map(Number); const t = Math.min(23 * 60 + 59, h * 60 + m + mins); return pad(Math.floor(t / 60)) + pad(t % 60) + "00"; }
-function gcalUrl({title, date, time, rrule, details}) {
-  const d = date.replace(/-/g, "");
-  const dates = time ? `${d}T${time.replace(":", "")}00/${d}T${addMins(time, 15)}` : `${d}/${ymdShift(date, 1).replace(/-/g, "")}`;
-  const q = new URLSearchParams({action:"TEMPLATE", text:title, dates, details:details || "Recordatorio de Entre Dos"});
-  try { q.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Argentina/Buenos_Aires"); } catch {}
-  if (rrule) q.set("recur", "RRULE:" + rrule);
-  return "https://calendar.google.com/calendar/render?" + q.toString().replace(/\+/g, "%20");
-}
-function choreRule(c, onlyMine) {
-  if (c.unit === "once") return "";
-  if (isWeekdayChore(c)) {
-    let w = choreWdays(c);
-    if (onlyMine && c.assign === "byDay") w = w.filter(d => (c.dayOwner || {})[d] === meId());
-    return w.length ? `FREQ=WEEKLY;INTERVAL=${Number(c.wevery) === 2 ? 2 : 1};BYDAY=${w.map(d => BYDAY[d]).join(",")}` : null;
-  }
-  return `FREQ=${{day:"DAILY", week:"WEEKLY", month:"MONTHLY"}[c.unit] || "WEEKLY"};INTERVAL=${Number(c.every) || 1}`;
-}
-function reminderSheet(kind, obj) {
-  const me = meId(); let base;
-  if (kind === "chore") { const st = choreState(obj); base = {title:obj.name, date:st.due >= todayS() ? st.due : todayS(), time:"20:00"}; }
-  else if (kind === "due") base = {title:obj.title, date:obj.due, time:"10:00"};
-  else base = {title:obj.title || "Evento", date:obj.date, time:obj.allDay ? "" : (obj.start || "")};
-  const byDayMine = kind === "chore" && obj.assign === "byDay" && isWeekdayChore(obj);
-  openSheet("Recordatorio en tu calendario", `
-    <p style="margin:0">Se abre <b>Google Calendar</b> con el recordatorio armado${kind === "chore" && obj.unit !== "once" || kind === "due" && obj.unit !== "once" || kind === "event" && obj.repeat && obj.repeat !== "none" ? " y repetido" : ""}. Guardalo ahí y te va a avisar en el celular.</p>
-    ${kind !== "event" || base.time ? `<label class="field"><span>¿A qué hora?</span><input class="input" type="time" name="time" value="${esc(base.time || "20:00")}"></label>` : ""}
-    ${byDayMine ? `<label class="row small"><input type="checkbox" name="mine" checked> Solo los días que me tocan</label>` : ""}
-    ${kind === "due" && Number(obj.lead) > 0 ? `<label class="row small"><input type="checkbox" name="early" checked> Avisarme ${Number(obj.lead)} ${Number(obj.lead) === 1 ? "día" : "días"} antes (en vez del mismo día)</label>` : ""}
-    ${kind === "chore" && obj.assign === "rotate" ? `<p class="small muted" style="margin:0">Como se turnan, el aviso sale todas las veces; en la app ves a quién le toca.</p>` : ""}
-    <a class="btn primary" data-gcal target="_blank" rel="noopener noreferrer" href="#">Abrir Google Calendar</a>
-    <p class="small muted" style="margin:0">A Google se envían el nombre, la fecha y la repetición. Cada uno lo agrega en su propio calendario. ¿Usás el calendario del iPhone? Sumá tu cuenta de Google en Ajustes del iPhone y vas a ver el recordatorio ahí.</p>`, null, f => {
-    const upd = () => {
-      const time = f.elements["time"]?.value || "";
-      let date = base.date, title = base.title, rrule = "";
-      if (kind === "chore") { rrule = choreRule(obj, f.elements["mine"]?.checked); if (rrule === null) { f.querySelector("[data-gcal]").setAttribute("aria-disabled", "true"); return; } title = `${obj.name} (Entre Dos)`;
-        if (f.elements["mine"]?.checked && byDayMine) { const mineDays = choreWdays(obj).filter(d => (obj.dayOwner || {})[d] === me); date = nextChoreDay({...obj, wdays:mineDays}, todayS()) || date; } }
-      if (kind === "due") { rrule = obj.unit === "once" ? "" : `FREQ=${obj.unit === "month" ? "MONTHLY" : "YEARLY"};INTERVAL=${Number(obj.n) || 1}`;
-        if (f.elements["early"]?.checked) { date = ymdShift(obj.due, -(Number(obj.lead) || 7)); title = obj.cat === "familia" ? `Se viene: ${obj.title} (es el ${shortDate(obj.due)})` : `Se viene: ${obj.title} (vence el ${shortDate(obj.due)})`; } }
-      if (kind === "event") { const R = {daily:"FREQ=DAILY", weekly:"FREQ=WEEKLY", biweekly:"FREQ=WEEKLY;INTERVAL=2", monthly:"FREQ=MONTHLY", yearly:"FREQ=YEARLY"}[obj.repeat]; rrule = R ? R + (obj.until ? ";UNTIL=" + obj.until.replace(/-/g, "") : "") : ""; }
-      f.querySelector("[data-gcal]").href = gcalUrl({title, date, time, rrule});
-    };
-    f.addEventListener("input", upd); f.addEventListener("change", upd); upd();
-  });
-}
+/* ---------- help ---------- */
 const HELP = {
-  agenda:`<p>La agenda es compartida, pero cada evento elige quién lo ve:</p><ul><li><b>Todos</b>: lo ven completo.</li><li><b>Como ocupado</b>: tu pareja ve que estás ocupado, sin detalles. Podés mostrar solo la franja (mañana, tarde, noche).</li><li><b>Solo yo</b>: queda en tu espacio privado.</li></ul><p>En <b>Fechas</b> están los vencimientos, cumpleaños y fechas especiales; también se ven en el calendario con ⏰ o 🎉.</p><p>Si un evento choca con otro, la app te avisa al cargarlo. En un evento ya creado podés armar un <b>recordatorio en tu calendario</b>.</p>`,
+  agenda:`<p>La agenda es compartida, pero cada evento elige quién lo ve:</p><ul><li><b>Todos</b>: lo ven completo.</li><li><b>Como ocupado</b>: tu pareja ve que estás ocupado, sin detalles. Podés mostrar solo la franja (mañana, tarde, noche).</li><li><b>Solo yo</b>: queda en tu espacio privado.</li></ul><p>En <b>Fechas</b> están los vencimientos, cumpleaños y fechas especiales; también se ven en el calendario con ⏰ o 🎉.</p><p>Si un evento choca con otro, la app te avisa al cargarlo.</p>`,
   cuentas:`<p>Cada uno carga lo que paga y la app calcula <b>quién le pasa cuánto a quién</b>, con la menor cantidad de transferencias.</p><ul><li>Dividí mitad y mitad, por montos, por porcentaje o proporcional a los ingresos (eso se configura en el grupo).</li><li>Cargá compras <b>en cuotas</b>: cada cuota cuenta en su mes.</li><li>Los <b>gastos fijos</b> (alquiler, expensas) se cargan con un toque cada mes.</li><li>Con pesos y dólares, podés <b>pasar todo a pesos</b> con la cotización que acuerden.</li></ul>`,
   finanzas:`<p>Mis finanzas es <b>solo tuya</b>. Ves tus ingresos, tus gastos y tu parte de los gastos compartidos.</p><ul><li><b>Cuentas</b>: efectivo, banco, Mercado Pago, con su saldo.</li><li><b>Tarjetas</b>: cuánto viene en cada resumen, contando las cuotas.</li><li><b>Proyección</b>: cómo terminarías el mes a este ritmo.</li><li><b>Presupuestos</b> por categoría y <b>metas de ahorro</b>, propias o compartidas.</li></ul>`,
-  tareas:`<p>Las tareas se repiten solas: cada tanto o en <b>ciertos días</b> (por ejemplo, martes y domingos, o una semana sí y otra no). Se pueden turnar, asignar a una persona o a cada día alguien distinto.</p><ul><li><b>Hecha ✓</b> la marca y programa la próxima. Si se pasó el día, con una vez alcanza para ponerse al día.</li><li><b>La tomo yo</b> si querés hacer la del otro.</li><li>En cada tarea: <b>pausar</b> (viajes), <b>saltear</b>, <b>mover una fecha</b> y armar un <b>recordatorio en tu calendario</b>.</li></ul>`,
+  tareas:`<p>Las tareas se repiten solas: cada tanto o en <b>ciertos días</b> (por ejemplo, martes y domingos, o una semana sí y otra no). Se pueden turnar, asignar a una persona o a cada día alguien distinto.</p><ul><li><b>Hecha ✓</b> la marca y programa la próxima. Si se pasó el día, con una vez alcanza para ponerse al día.</li><li><b>La tomo yo</b> si querés hacer la del otro.</li><li>En cada tarea: <b>pausar</b> (viajes), <b>saltear</b>, y <b>mover una fecha</b>. Te avisamos por Telegram o en el celu el día que te toca.</li></ul>`,
   listas:`<p>Listas compartidas para el súper, pendientes o lo que quieran. Tildá lo hecho y borrá los tachados de una vez.</p>`,
   fechas:`<p>Vencimientos (VTV, patente, seguro, monotributo…) y fechas especiales. Se ven en el calendario con ⏰, 🐾 o 🎉 y aparecen en Inicio cuando se acercan. Te avisamos el día del primer aviso que elijas, el día anterior y el mismo día. En los cumpleaños podés anotar <b>ideas de regalo</b> que solo ves vos.</p>`,
   decidir:`<p>Armen una votación (qué comer, qué ver, qué hacer). Cada uno dice sí o no y <b>solo se ven las coincidencias</b> cuando votaron todos.</p>`,
@@ -2537,17 +2473,15 @@ function petAge(b) {
   return yy ? `${yy} ${yy === 1 ? "año" : "años"}${mm ? ` y ${mm} ${mm === 1 ? "mes" : "meses"}` : ""}` : `${mm} ${mm === 1 ? "mes" : "meses"}`;
 }
 const petDues = id => allDues().filter(d => d.pet === id);
-V.mascotas = () => {
+function mascotasBody() {
   const ps = Object.values(S.pets).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-  const head = hogarHead('<button class="btn primary" data-act="newPet">+ Mascota</button>');
-  if (!ps.length) return head + `<section class="card"><div class="empty"><b>La ficha de tu mascota</b>Veterinario, alimento, medicación, peso y sus vacunas y antiparasitarios, con aviso antes de que venzan.
-    <div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary" data-act="newPet">Crear la primera ficha</button></div></div></section>`;
-  return head + `<div class="goal-grid" style="max-width:900px">${ps.map(p => { const ds = petDues(p.id); const next = ds[0];
+  if (!ps.length) return `<section class="card" style="max-width:760px;margin-top:16px"><div class="row"><span class="small muted" style="flex:1">¿Tienen mascota? Armá su ficha: veterinaria, alimento, medicación y sus vacunas con aviso.</span><button class="btn sm" data-act="newPet">+ Mascota</button></div></section>`;
+  return `<div class="row" style="margin:18px 0 8px"><h2 style="margin:0;flex:1">Mascotas</h2><button class="btn sm" data-act="newPet">+ Mascota</button></div><div class="goal-grid" style="max-width:900px">${ps.map(p => { const ds = petDues(p.id); const next = ds[0];
     return `<section class="card pet-card"><div class="card-h"><span class="avatar" style="--c:${safeColor(p.color, "#6A5ACD")};width:40px;height:40px;font-size:16px;color:#fff">${esc(initials(p.name))}</span><div style="min-width:0"><h2 style="margin:0">${esc(p.name)}</h2><div class="small muted">${esc([PET_KINDS.find(k => k[0] === p.species)?.[1], p.breed, petAge(p.birth)].filter(Boolean).join(" · "))}</div></div></div>
       <div class="small" style="display:grid;gap:4px">${p.weight ? `<div><b>Peso:</b> ${esc(p.weight)} kg</div>` : ""}${p.food ? `<div><b>Alimento:</b> ${esc(p.food)}</div>` : ""}${p.meds ? `<div><b>Medicación:</b> ${esc(p.meds)}</div>` : ""}${p.vet ? `<div><b>Veterinaria:</b> ${esc(p.vet)}${p.vetPhone ? " · " + esc(p.vetPhone) : ""}</div>` : ""}</div>
       ${next ? `<div style="margin-top:10px"><span class="small muted">Próximo:</span> ${esc(next.title)} ${dueDateBadge(next)}</div>` : `<p class="small muted" style="margin:10px 0 0">Sin vacunas ni controles cargados.</p>`}
       <div class="row" style="margin-top:10px"><button class="btn sm" data-act="editPet" data-id="${esc(p.id)}">Ver ficha</button></div></section>`; }).join("")}</div>`;
-};
+}
 function petSheet(p) {
   const isNew = !p; const x = p || {id:newId(), name:"", species:"perro", color:PALETTE[(Object.keys(S.pets).length + 3) % PALETTE.length]};
   const ds = isNew ? [] : petDues(x.id);
@@ -2727,7 +2661,7 @@ function eventSheet(ev, dayDefault, occ) {
       <label class="field"><span>Lugar</span><input class="input" name="place" maxlength="80" value="${esc(e.place || "")}"></label>
       <label class="field"><span>Notas</span><textarea class="input" name="note" maxlength="500">${esc(e.note || "")}</textarea></label>
     </div></details>
-    ${!isNew && !e.busy ? `<button class="btn" type="button" data-act="remindEvent" data-id="${esc(e.id)}">🔔 Recordatorio en mi calendario</button>` : ""}
+    
     ${!isNew && e.repeat && e.repeat !== "none" ? `<p class="small muted" style="margin:0">Borrar elimina todas las repeticiones.</p>` : ""}
     <div class="form-actions"><button class="btn primary" type="submit">${isNew ? "Guardar evento" : "Guardar cambios"}</button>${!isNew && occ && e.repeat && e.repeat !== "none" && isOwner ? `<button class="btn" type="button" data-act="skipOcc">Quitar solo el ${esc(shortDate(occ))}</button>` : ""}${isNew ? "" : delBtn("event")}</div>`;
   openSheet(isNew ? "Nuevo evento" : "Editar evento", body, async (fd) => {
@@ -2805,7 +2739,7 @@ function expenseSheet(ex, preset) {
   const splitOpen = mode !== defSplit.splitMode || (mode === "equal" && members.some(id => e.split?.[id] !== true));
   const body = `
     <div class="seg"><label><input type="radio" name="kind" value="expense" ${e.kind !== "payment" ? "checked" : ""}><span>Gasto</span></label><label><input type="radio" name="kind" value="payment" ${e.kind === "payment" ? "checked" : ""}><span>Pago entre ustedes</span></label></div>
-    ${isNew && S.sample && e.kind !== "payment" && !e.fixedId ? `<div class="nl-box" data-k="expense"><label class="field"><span>✨ Contalo como te sale</span><div class="row" style="flex-wrap:nowrap"><input class="input" name="nl" autocomplete="off" maxlength="300" placeholder="pagué 12 lucas de súper, mitad" style="flex:1"><button class="btn sm" type="button" data-nl>Completar</button><label class="btn sm" style="flex:none" title="Foto del ticket">📷<span class="sr">Foto del ticket</span><input type="file" name="ticket" accept="image/*" capture="environment" class="sr" data-ticket></label></div><small class="muted" data-nlmsg aria-live="polite"></small></label></div>` : ""}
+
     <div class="field"><span>Monto</span>
       <div class="amount-row"><input class="input amount-big money" name="amount" inputmode="decimal" autocomplete="off" value="${esc(amtStr(e.amount))}" placeholder="0,00" aria-label="Monto"><select class="input" name="cur" aria-label="Moneda">${curOpts(e.cur)}</select></div>
       <small class="amt-preview" data-preview></small></div>
@@ -2904,12 +2838,6 @@ function expenseSheet(ex, preset) {
     };
     f.addEventListener("input", upd); f.addEventListener("change", upd); upd();
     wireAmount(f); wireAutoCat(f, () => cfg().expCats, isNew);
-    f.addEventListener("click", async ev => {
-      if (ev.target.closest("[data-nl]")) { ev.preventDefault(); nlFill(f, g, members); }
-      else if (ev.target.closest("[data-nlok]")) { ev.preventDefault(); f.dataset.nlOk = "1"; savePrefs({nlConsent:true}).catch(() => {}); const pf = S.pendingTicket; S.pendingTicket = null; nlFill(f, g, members, pf || undefined); }
-    });
-    f.querySelector("[data-ticket]")?.addEventListener("change", ev => { const file = ev.target.files?.[0]; if (file) nlFill(f, g, members, file); ev.target.value = ""; });
-    f.elements["nl"]?.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); nlFill(f, g, members); } });
     const sumUpd = () => { const el = f.querySelector("[data-splitsum]"); if (!el) return; const md = f.mode.value; const inc = $$('input[name="inc"]', f).filter(x => x.checked).map(x => x.value);
       el.textContent = !inc.length ? "Elegí quién participa" : inc.length === 1 ? "Todo de " + (inc[0] === me ? "mí" : pName(inc[0])) : md === "equal" ? (inc.length === members.length ? (inc.length === 2 ? "Mitad y mitad" : `Iguales entre ${inc.length}`) : "Iguales entre " + inc.map(pName).join(", ")) : md === "shares" ? `Proporcional (${pctText(inc.map(id => parseAmt(f["v_" + id].value) || 0))})` : {exact:"Montos a mano", percent:"Por porcentaje"}[md]; };
     f.addEventListener("input", sumUpd); f.addEventListener("change", sumUpd); sumUpd();
@@ -3023,13 +2951,14 @@ async function saveCfg(fields) { if (S.config.main) await patch("config/main", f
 
 function quickAddSheet() {
   const opt = (act, icon, color, t, d) => `<button type="button" data-act="${act}"><span class="cat-ic" style="--c:${color}">${icon}</span>${t}<small>${d}</small></button>`;
-  openSheet("¿Qué querés agregar?", `<div class="qa">
-    ${opt("qaExpense", UI.people, "var(--accent)", "Gasto compartido", "Se divide entre el grupo")}
-    ${opt("qaTx", UI.wallet, "var(--accent2)", "Movimiento propio", "Gasto o ingreso, solo tuyo")}
-    ${opt("qaEvent", UI.cal, "#2E9E6A", "Evento", "Con privacidad a elección")}
-    ${opt("qaItem", UI.list, "#C99A1A", "A una lista", "Compras, pendientes…")}
+  openSheet("¿Qué querés agregar?", `<div class="qa qa-top">
+    ${opt("qaExpense", UI.people, "var(--accent)", "Gasto compartido", "Se divide")}
+    ${opt("qaItem", UI.list, "#C99A1A", "A una lista", "Compras…")}
+    ${opt("qaEvent", UI.cal, "#2E9E6A", "Evento", "A la agenda")}
+  </div><div class="month-h" style="margin-top:14px">Más</div><div class="qa">
+    ${opt("qaTx", UI.wallet, "var(--accent2)", "Gasto o ingreso mío", "Solo lo ves vos")}
     ${opt("qaChore", SV(AREAS[2].icon), "#0E7A68", "Tarea del hogar", "Se repite y se turnan")}
-    ${opt("qaDue", UI.cal, "#8E6C0F", "Vencimiento o fecha", "VTV, seguro, cumple…")}
+    ${opt("qaDue", UI.cal, "#8E6C0F", "Fecha o vencimiento", "VTV, seguro, cumple…")}
     ${opt("qaPoll", UI.scale, "#B54BB0", "Decidir algo", "Votan sí o no, ven coincidencias")}
     ${opt("qaThanks", SV('<path d="M20.8 6.6a5 5 0 0 0-8.8-2.1A5 5 0 0 0 3.2 6.6C2 11 12 20 12 20s10-9 8.8-13.4z"/>'), "#B04C32", "Un gracias", "Una nota corta para tu pareja")}
   </div>`, null);
@@ -3115,7 +3044,7 @@ async function ensureGroup(pid, extra = []) {
 
 /* ---------- actions ---------- */
 const A = {
-  go: t => { S.view = t.dataset.v; if (S.view === "fechas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir", "mascotas"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
+  go: t => { S.view = t.dataset.v; if (S.view === "fechas" || S.view === "mascotas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
   closeSheet,
   claim: t => { const p = S.people[t.dataset.id]; if (p) claimSheet(p); },
   saveFx: async t => { const cur = t.dataset.cur; const v = parseAmt(document.getElementById("fx-" + cur)?.value); if (!(v > 0)) return toast("Poné cuánto vale en pesos, por ejemplo 1200."); await saveCfg({fx:{...(cfg().fx || {}), [cur]:{rate:v, date:todayS()}}}); toast(`Cotización guardada: 1 ${cur} = ${money(v, BASE)}`); },
@@ -3135,7 +3064,7 @@ const A = {
   assignChore: async t => { const c = S.chores[t.dataset.id]; if (!c) return; const by = $("#sheetForm").elements["nextBy"].value; await patch("chores/" + c.id, {next:by, nextAt:Date.now()}); closeSheet(); toast(by === meId() ? "La hacés vos esta vez" : `Esta vez la hace ${pName(by)}`); },
   hideSince: () => { S.sinceHidden = true; render(); },
   togChoreSplit: () => { store.set("choreSplit", !store.get("choreSplit", false)); render(); },
-  copyInvite: () => { const txt = FB.ok ? inviteText() : INVITE_TEXT; try { navigator.clipboard.writeText(txt).then(() => toast("Mensaje copiado. Pegalo en WhatsApp y mandáselo a tu pareja."), () => showText("Mensaje para tu pareja", txt)); } catch { showText("Mensaje para tu pareja", txt); } },
+  copyInvite: () => { const txt = inviteText(); try { navigator.clipboard.writeText(txt).then(() => toast("Mensaje copiado. Pegalo en WhatsApp y mandáselo a tu pareja."), () => showText("Mensaje para tu pareja", txt)); } catch { showText("Mensaje para tu pareja", txt); } },
   signIn: async () => { const prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
     try { await firebase.auth().signInWithPopup(prov); location.reload(); }
     catch (e) { const c = e && e.code; if (c === "auth/popup-blocked" || c === "auth/operation-not-supported-in-this-environment" || c === "auth/cancelled-popup-request") { try { await firebase.auth().signInWithRedirect(prov); } catch { toast("No se pudo abrir el inicio de sesión."); } } else if (c !== "auth/popup-closed-by-user") toast("No se pudo entrar. Probá de nuevo."); } },
@@ -3169,7 +3098,14 @@ const A = {
   togCat: t => { const id = t.dataset.id; S.hiddenCats = S.hiddenCats.includes(id) ? S.hiddenCats.filter(x => x !== id) : [...S.hiddenCats, id]; store.set("hiddenCats", S.hiddenCats); render(); },
   newExpense: () => expenseSheet(null),
   editExpense: t => { const e = S.expenses[t.dataset.id]; if (e) expenseSheet(e); },
-  settle: t => expenseSheet(null, {kind:"payment", from:t.dataset.from, to:t.dataset.to, amount:Number(t.dataset.amt), cur:t.dataset.cur, ...(t.dataset.group ? {group:t.dataset.group} : {})}),
+  settleEdit: t => expenseSheet(null, {kind:"payment", from:t.dataset.from, to:t.dataset.to, amount:Number(t.dataset.amt), cur:t.dataset.cur, ...(t.dataset.group ? {group:t.dataset.group} : {})}),
+  settle: async t => {
+    const group = t.dataset.group || curGroup()?.id; if (!group) return;
+    const id = newId(), amount = r2(Number(t.dataset.amt)), me = meId();
+    await put("expenses/" + id, {id, group, cur:t.dataset.cur, date:todayS(), amount, createdBy:me, createdAt:Date.now(), updatedAt:Date.now(), kind:"payment", from:t.dataset.from, to:t.dataset.to});
+    toast(`Listo: ${pName(t.dataset.from)} le pasó ${money(amount, t.dataset.cur)} a ${pName(t.dataset.to)}`, () => del("expenses/" + id));
+  },
+  copyAlias: t => { const a = t.dataset.alias; try { navigator.clipboard.writeText(a).then(() => toast(`Alias copiado: ${a}. Monto: ${money(Number(t.dataset.amt), t.dataset.cur)}`), () => showText("Alias", a)); } catch { showText("Alias", a); } },
   openGroup: t => { S.groupId = t.dataset.id; store.set("groupId", S.groupId); A.go({dataset:{v:"cuentas"}}); },
   newGroup: () => groupSheet(null),
   editGroup: t => groupSheet(S.groups[t.dataset.id]),
@@ -3197,11 +3133,13 @@ const CHG = {
   notifFlag: t => savePrefs({notif:{...NOTIF_DEF, ...(prefs().notif || {}), [t.dataset.k]:t.checked}}),
   notifTime: t => { if (/^\d{2}:\d{2}$/.test(t.value)) savePrefs({notif:{...NOTIF_DEF, ...(prefs().notif || {}), [t.dataset.k]:t.value}}); },
   calMode: t => { S.calMode = t.value; if (t.value !== "fechas") store.set("calMode", S.calMode); render(); },
-  group: t => { S.groupId = t.value; store.set("groupId", S.groupId); render(); },
+  group: t => { if (t.value === "__new") { render(); return groupSheet(null); } if (t.value === "__edit") { const g = curGroup(); render(); return g && groupSheet(g); } S.groupId = t.value; store.set("groupId", S.groupId); render(); },
   qCat: t => { S.qCat = t.value; render(); },
   finCur: t => { S.finCur = t.value; render(); },
+  fTab: t => { S.fTab = t.value; store.set("fTab", S.fTab); render(); },
   meName: async t => { const v = t.value.trim(); if (v) await patch("people/" + meId(), {name:v}); },
   meColor: async t => { if (HEX.test(t.value)) await patch("people/" + meId(), {color:t.value}); },
+  meAlias: async t => { const v = t.value.trim().replace(/\s+/g, ""); const me = meId(); if (me) { await patch("people/" + me, {alias:v}); toast(v ? "Alias guardado" : "Alias borrado"); } },
   personName: async t => { const v = t.value.trim(); const p = S.people[t.dataset.id]; if (v && p) await patch("people/" + p.id, {name:v}); },
   weekStart: t => savePrefs({weekStart:Number(t.value)}),
   prefCur: t => { S.finCur = null; savePrefs({cur:t.value}); },
@@ -3229,7 +3167,7 @@ Object.assign(A, {
     if (S.view === "cuentas") return expenseSheet(null);
     if (S.view === "agenda") return S.calMode === "fechas" ? dueSheet(null) : eventSheet(null, S.selDay);
     if (S.view === "finanzas") return txSheet(null);
-    if (S.view === "hogar") return S.hTab === "listas" ? (sortedLists().length ? itemSheet() : listSheet(null)) : S.hTab === "decidir" ? newPollSheet() : S.hTab === "mascotas" ? petSheet(null) : choreSheet(null);
+    if (S.view === "hogar") return S.hTab === "listas" ? (sortedLists().length ? itemSheet() : listSheet(null)) : S.hTab === "decidir" ? newPollSheet() : choreSheet(null);
     quickAddSheet();
   },
   qaExpense: () => { closeSheet(); expenseSheet(null); },
@@ -3257,9 +3195,6 @@ Object.assign(A, {
   editWallet: t => { const w = (prefs().wallets || []).find(x => x.id === t.dataset.id); if (w) walletSheet(w); },
   newCard: () => cardSheet(null),
   editCard: t => { const c = (prefs().cards || []).find(x => x.id === t.dataset.id); if (c) cardSheet(c); },
-  remindChore: t => { const c = S.chores[t.dataset.id]; if (c) { closeSheet(); reminderSheet("chore", c); } },
-  remindDue: t => { const d = findDue(t.dataset.id, t.dataset.scope); if (d) { closeSheet(); reminderSheet("due", d); } },
-  remindEvent: t => { const e = allEvents().find(x => x.id === t.dataset.id); if (e) { closeSheet(); reminderSheet("event", e); } },
   moveChore: async t => { const c = S.chores[t.dataset.id]; if (!c) return; const to = $("#sheetForm")?.elements["moveTo"]?.value; if (!YMD.test(to || "")) return formErr("Elegí a qué día la movés.", "moveTo");
     const st = choreState(c); await patch("chores/" + c.id, {moveFrom:st.pend, moveTo:to}); closeSheet(); toast(`Movida al ${DOWL[wdayOf(to)]} ${shortDate(to)}`, () => patch("chores/" + c.id, {moveFrom:null, moveTo:null})); },
   help: t => { const v = t.dataset.v === "hogar" ? (S.hTab || "tareas") : t.dataset.v; showDoc("¿Cómo funciona?", `<div class="doc">${HELP[v] || ""}</div>`); },
@@ -3296,6 +3231,11 @@ Object.assign(A, {
   reclaimProfile: async t => { const pid = t.dataset.id; await patch("people/" + pid, {uid:S.uid}); toast("Recuperaste tu perfil"); },
   moreExp: () => { S.expLimit = (S.expLimit || 60) + 100; render(); },
   skipOcc: () => S.skipOcc?.(),
+  jump: t => document.getElementById(t.dataset.id)?.scrollIntoView({behavior:"smooth", block:"start"}),
+  choreMenu: t => { const c = S.chores[t.dataset.id]; if (c) choreMenuSheet(c); },
+  choreDoneBy: async t => { const id = t.dataset.id, by = t.dataset.by; closeSheet(); await markChore(id, by); },
+  choreTomorrow: async t => { const c = S.chores[t.dataset.id]; if (!c) return; const st = choreState(c), to = ymdShift(todayS(), 1); closeSheet();
+    await patch("chores/" + c.id, {moveFrom:st.pend, moveTo:to}); toast(`"${c.name}" pasa a mañana`, () => patch("chores/" + c.id, {moveFrom:null, moveTo:null})); },
   skipChore: async t => { const c = S.chores[t.dataset.id]; if (!c) return; const lid = newId(); await put("choreLog/" + lid, {id:lid, chore:c.id, skip:true, by:null, date:todayS(), points:0, createdAt:Date.now(), ...(isWeekdayChore(c) ? {occ:choreOccCover(c, choreState(c).pend, todayS())} : {})}); closeSheet(); toast(`"${c.name}" salteada esta vez`, () => del("choreLog/" + lid)); },
   addToRotation: async t => { const pid = t.dataset.id; for (const c of Object.values(S.chores)) if (c.assign === "rotate" && !(c.who || []).includes(pid)) await put("chores/" + c.id, {...c, who:[...(c.who || []), pid]}); toast(`${pName(pid)} ya entra en los turnos`); },
   newGoal: () => goalSheet(null),
@@ -3380,6 +3320,17 @@ document.addEventListener("submit", async e => {
     else { pinFails++; $("#lockPin").value = ""; if (pinFails >= 5) { pinWaitUntil = Date.now() + 30000; pinFails = 0; $("#lockErr").textContent = "Demasiados intentos. Esperá 30 segundos."; } else $("#lockErr").textContent = "PIN incorrecto."; }
     return;
   }
+  if (f.id === "homeItemForm") {
+    const inp = f.elements["item"]; const text = inp.value.trim(); if (!text) return inp.focus();
+    let lid = f.dataset.list;
+    if (!lid || !S.lists[lid]) { lid = newId(); await put("lists/" + lid, {id:lid, name:"Compras", createdAt:Date.now()}); }
+    inp.value = "";
+    const parts2 = text.split(/\s*,\s*/).filter(Boolean).slice(0, 20);
+    for (const t2 of parts2) { const id = newId(); await put("items/" + id, {id, list:lid, text:t2.slice(0, 120), done:false, by:meId(), createdAt:Date.now()}); }
+    toast(parts2.length === 1 ? "Agregado" : `${parts2.length} agregados`);
+    setTimeout(() => document.querySelector('#homeItemForm input[name="item"]')?.focus(), 50);
+    return;
+  }
   if (f.id === "itemForm") {
     const inp = f.elements["item"]; const text = inp.value.trim(); if (!text) return inp.focus();
     const L = S.lists[S.listId] || sortedLists()[0]; if (!L) return;
@@ -3395,6 +3346,15 @@ document.addEventListener("submit", async e => {
 
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) navigator.serviceWorker.register("./sw.js").then(r => { FB.swReg = r; }).catch(() => {});
 render();
+// Mantener apretado el + abre siempre el menú completo
+(() => {
+  const fab = document.getElementById("fab"); let tm = null;
+  fab.title = "Mantené apretado para ver todas las opciones";
+  fab.addEventListener("pointerdown", () => { tm = setTimeout(() => { tm = "done"; if (navigator.vibrate) navigator.vibrate(10); quickAddSheet(); }, 500); });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) fab.addEventListener(ev, () => { if (tm && tm !== "done") { clearTimeout(tm); tm = null; } });
+  fab.addEventListener("click", e => { if (tm === "done") { e.stopImmediatePropagation(); e.preventDefault(); } tm = null; }, true);
+  fab.addEventListener("contextmenu", e => e.preventDefault());
+})();
 boot();
 })();
 </script>
