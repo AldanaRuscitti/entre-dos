@@ -212,6 +212,7 @@ svg{flex:none}
   .ev{font-size:0;height:5px;padding:0;border-radius:3px;background:var(--c)}
   .ev::before{display:none}
   .ev.busy{background:var(--muted)}
+  .ev.due{background:none;height:6px;border:1.5px solid var(--c);border-radius:6px}
   .cell-more{font-size:9.5px;padding:0}
   .cal .dow{padding:2px;text-align:center;font-size:10px}
 }
@@ -544,11 +545,11 @@ const S = {
   ready:false, local:false, readOnly:false, uid:null,
   people:{}, groups:{}, events:{}, expenses:{}, config:{}, lists:{}, items:{}, fixed:{}, goals:{}, contribs:{}, chores:{}, choreLog:{}, dues:{}, polls:{}, thanks:{}, pets:{},
   priv:{events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, settings:null},
-  listId: store.get("listId", null), cTab: store.get("cTab", "mov"), hTab: store.get("hTab", "tareas"), choreMine: false, cMonth: ymd(new Date()).slice(0, 7), drafts:{},
+  listId: store.get("listId", null), cTab: store.get("cTab", "mov"), hTab: (() => { const h = store.get("hTab", "tareas"); if (h === "fechas") { store.set("hTab", "tareas"); return "tareas"; } return h; })(), choreMine: false, cMonth: ymd(new Date()).slice(0, 7), drafts:{},
   view: (v => v === "listas" ? "hogar" : v)(store.get("view", "inicio")),
   calMonth: ymd(new Date()).slice(0, 7),
   selDay: todayS(),
-  calMode: store.get("calMode", "mes"),
+  calMode: store.get("calMode", "mes") === "fechas" ? "mes" : store.get("calMode", "mes"),
   hiddenPeople: store.get("hiddenPeople", []),
   hiddenCats: store.get("hiddenCats", []),
   groupId: store.get("groupId", null),
@@ -731,6 +732,7 @@ function avisosCard() {
     <div class="set-row"><label class="row" style="flex:1;flex-wrap:nowrap;gap:10px"><input type="checkbox" data-chg="notifFlag" data-k="before" ${n.before ? "checked" : ""}> <span>Aviso 1 hora antes de mis eventos con horario</span></label></div>
     <div class="set-row"><label class="row" style="flex:1;flex-wrap:nowrap;gap:10px"><input type="checkbox" data-chg="notifFlag" data-k="partner" ${n.partner ? "checked" : ""}> <span>Incluir lo que tiene mi pareja ese día</span></label></div>
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="notifTest">Mandarme un aviso de prueba</button></div>
+    <div class="set-row" style="margin-top:6px"><label class="row" style="flex:1;flex-wrap:nowrap;gap:10px"><input type="checkbox" data-chg="gcalOn" ${cfg().gcal ? "checked" : ""}> <span><b>Copiar la agenda a Google Calendar</b><br><span class="small muted">Para verla en el calendario del iPhone. Se copian los eventos compartidos y las fechas compartidas (lo "Solo yo" nunca; lo "Como ocupado", solo como ocupado). Lo ven todas las personas con las que compartas ese calendario. Vale para los dos: si lo apagás, se borran las copias.</span></span></label></div>
     <p class="small muted" style="margin:8px 0 0">Los avisos se revisan cada 15 minutos, así que pueden llegar con unos minutos de diferencia. Los eventos "Solo yo" nunca se le mandan a otra persona.</p></section>`;
 }
 function accessCard() {
@@ -741,6 +743,7 @@ function accessCard() {
     ${list.map(e => `<div class="set-row"><span style="flex:1;overflow-wrap:anywhere">${esc(e)}${e === S.email ? " <span class='small muted'>(vos)</span>" : ""}</span>${e !== S.email ? `<button class="x-btn" data-act="armDo" data-do="delAccess" data-id="${esc(e)}" aria-label="Quitar acceso a ${esc(e)}" title="Quitar acceso">×</button>` : ""}</div>`).join("")}
     <div class="row" style="margin-top:8px"><input class="input" id="newAccess" type="email" autocomplete="off" placeholder="mail de Google de tu pareja" style="flex:1;width:auto"><button class="btn sm" data-act="addAccess">Dar acceso</button></div>
     <p class="small muted" style="margin:8px 0 0">Después mandale el link: <b>${esc(appUrl())}</b></p>
+    ${cfg().gcal ? `<p class="small hint-warn" style="margin:8px 0 0">La agenda también se copia a un Google Calendar: si sacás a alguien de acá, sacalo también de ese calendario (en Google Calendar → Configuración → Compartir).</p>` : ""}
     <div class="row" style="margin-top:8px"><button class="btn sm" data-act="copyInvite">Copiar mensaje para tu pareja</button></div></section>`;
 }
 const inviteText = () => `Te sumé a "Entre Dos" para organizar juntos los gastos, la agenda y las tareas de la casa. Entrá a ${appUrl()} con tu cuenta de Google y elegí tu perfil. Si querés, agregala a la pantalla de inicio del celu. Lo tuyo privado sigue siendo solo tuyo.`;
@@ -785,15 +788,22 @@ function errMsg(e) {
   return "No se guardó. Revisá tu conexión y probá de nuevo.";
 }
 const clean = o => JSON.parse(JSON.stringify(o));
+let _touchAt = 0;
+function touchSync(path) {
+  if (!FB.ok || !/^(events|dues|people)\//.test(path) || Date.now() - _touchAt < 3000) return;
+  _touchAt = Date.now(); DB.doc("config/sync").set({at:Date.now()}).catch(() => {});
+}
 async function put(path, data) {
+  touchSync(path);
   try { await DB.doc(path).set(clean(data)); }
   catch (e) {
     if (e && (e.code === "unavailable" || e.code === "resource_exhausted")) { await new Promise(r => setTimeout(r, (e.code === "unavailable" ? 400 : 1500) + Math.random() * 800)); try { await DB.doc(path).set(clean(data)); return; } catch (e2) { e = e2; } }
     toast(errMsg(e)); throw e;
   }
 }
-async function bgDelete(paths) { for (let k = 0; k < paths.length; k++) { try { await DB.doc(paths[k]).delete(); } catch { break; } if (k % 20 === 19) await new Promise(r => setTimeout(r, 300)); } }
+async function bgDelete(paths) { if (paths[0]) touchSync(paths[0]); for (let k = 0; k < paths.length; k++) { try { await DB.doc(paths[k]).delete(); } catch { break; } if (k % 20 === 19) await new Promise(r => setTimeout(r, 300)); } }
 async function patch(path, fields) {
+  touchSync(path);
   const go = () => DB.doc(path).update(clean(fields));
   try { await go(); } catch (e) {
     if (e && (e.code === "unavailable" || e.code === "resource_exhausted")) { await new Promise(r => setTimeout(r, 600 + Math.random() * 800)); try { await go(); return; } catch (e2) { e = e2; } }
@@ -801,7 +811,7 @@ async function patch(path, fields) {
   }
 }
 const hash = s => { let h = 5381; for (const ch of s) h = (h * 33 ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };
-async function del(path) { try { await DB.doc(path).delete(); } catch (e) { toast(errMsg(e)); throw e; } }
+async function del(path) { touchSync(path); try { await DB.doc(path).delete(); } catch (e) { toast(errMsg(e)); throw e; } }
 
 async function boot() {
   if (fbConfigured()) {
@@ -892,7 +902,7 @@ function renderInner() {
   { const known = store.get("uids", {}), now = {}; let changed = false;
     for (const pp of Object.values(S.people)) { now[pp.id] = pp.uid || null; if (pp.id in known && known[pp.id] && known[pp.id] !== now[pp.id] && pp.uid !== S.uid) { (S.uidAlerts ||= new Set()).add(pp.id); } if (known[pp.id] !== now[pp.id]) changed = true; }
     if (changed) store.set("uids", now); }
-  $("#fab").setAttribute("aria-label", {cuentas:"Agregar gasto", agenda:"Agregar evento", finanzas:"Agregar movimiento", hogar:{listas:"Agregar a una lista", fechas:"Agregar fecha", decidir:"Nueva votación", mascotas:"Nueva mascota"}[S.hTab] || "Agregar tarea"}[S.view] || "Agregar");
+  $("#fab").setAttribute("aria-label", {cuentas:"Agregar gasto", agenda:S.calMode === "fechas" ? "Agregar fecha" : "Agregar evento", finanzas:"Agregar movimiento", hogar:{listas:"Agregar a una lista", decidir:"Nueva votación", mascotas:"Nueva mascota"}[S.hTab] || "Agregar tarea"}[S.view] || "Agregar");
   $("#mePill").innerHTML = me ? `<button class="me-pill" data-act="go" data-v="ajustes" aria-label="Ajustes">${avatar(me.id)}${esc(me.name)}${ICONS.ajustes}</button>` : "";
   const ae = document.activeElement;
   const fid = ae && ae.id && main.contains(ae) ? ae.id : null;
@@ -1192,7 +1202,7 @@ V.inicio = () => {
   if (fx.length) parts.push(`<div class="month-h">Fijos que vencen</div>` + fx.map(x => fixedRow(x.t, x.kind, ym)).join(""));
   if (myChores.length) parts.push(`<div class="month-h">Tus tareas de hoy</div>` + myChores.slice(0, 5).map(x => choreRow(x.c)).join("") + (myChores.length > 5 ? `<p class="small muted" style="margin:6px 8px">Y ${myChores.length - 5} más en Hogar.</p>` : ""));
   const soonDues = allDues().filter(d => d.days <= (d.lead ?? 7));
-  if (soonDues.length) parts.push(`<div class="month-h">Se viene</div>` + soonDues.slice(0, 5).map(dueRow).join(""));
+  if (soonDues.length) parts.push(`<div class="month-h">Se viene <button class="linkbtn" data-act="go" data-v="fechas">Ver fechas ›</button></div>` + soonDues.slice(0, 5).map(dueRow).join(""));
   const seenP = store.get("pollSeen", []);
   const pollsTodo = Object.values(S.polls).map(p2 => ({p2, st:pollState(p2)})).filter(x => (x.st.iAmIn && !x.st.myDone) || (x.st.all && !seenP.includes(x.p2.id)));
   if (pollsTodo.length) parts.push(`<div class="month-h">Para decidir</div>` + pollsTodo.map(({p2, st}) => `<div class="item click" data-act="openPoll" data-id="${esc(p2.id)}"><span class="cat-ic" style="--c:var(--accent2)">${UI.scale}</span><div class="grow"><div class="t">${esc(p2.title)}</div><div class="s">${!st.myDone ? "Te falta votar" : st.matches.length ? "¡Ya hay coincidencias!" : "Ya votaron todos"}</div></div><span class="muted">›</span></div>`).join(""));
@@ -1234,7 +1244,7 @@ V.agenda = () => {
   const off = (first.getDay() - ws + 7) % 7;
   const gStart = addDays(first, -off);
   const gEnd = addDays(gStart, 41);
-  const map = eventsByDay(ymd(gStart), ymd(gEnd));
+  const map = eventsByDay(ymd(gStart), ymd(gEnd)), dmap = duesByDay(ymd(gStart), ymd(gEnd));
   const t = todayS();
   const people = peopleList();
   const filt = `<div class="filters">
@@ -1242,24 +1252,27 @@ V.agenda = () => {
     ${people.map(p => `<button class="chip" data-act="togPerson" data-id="${esc(p.id)}" aria-pressed="${!S.hiddenPeople.includes(p.id)}"><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.uid === S.uid ? "Yo" : p.name)}</button>`).join("")}
     <button class="chip" data-act="togCats" aria-expanded="${!!S.showCats}">Categorías${S.hiddenCats.length ? ` · ${S.hiddenCats.length} ocultas` : ""} ${S.showCats ? "▴" : "▾"}</button>
   </div>${S.showCats ? `<div class="filters">` + c.calCats.map(k => `<button class="chip" data-act="togCat" data-id="${esc(k.id)}" aria-pressed="${!S.hiddenCats.includes(k.id)}"><span class="dot" style="--c:${esc(k.color)}"></span>${esc(k.name)}</button>`).join("") + `</div>` : ""}`;
-  const head = `<div class="page-head"><h1>Agenda</h1>${helpBtn("agenda")}
-    <div class="seg" role="group" aria-label="Vista"><label><input type="radio" name="calmode" value="mes" data-chg="calMode" ${S.calMode === "mes" ? "checked" : ""}><span>Mes</span></label><label><input type="radio" name="calmode" value="lista" data-chg="calMode" ${S.calMode === "lista" ? "checked" : ""}><span>Lista</span></label></div>
-    <button class="btn primary" data-act="newEvent">+ Evento</button></div>`;
+  const head = `<div class="page-head"><h1>Agenda</h1>${helpBtn(S.calMode === "fechas" ? "fechas" : "agenda")}
+    <div class="seg" role="group" aria-label="Vista"><label><input type="radio" name="calmode" value="mes" data-chg="calMode" ${S.calMode === "mes" ? "checked" : ""}><span>Mes</span></label><label><input type="radio" name="calmode" value="lista" data-chg="calMode" ${S.calMode === "lista" ? "checked" : ""}><span>Lista</span></label><label><input type="radio" name="calmode" value="fechas" data-chg="calMode" ${S.calMode === "fechas" ? "checked" : ""}><span>Fechas</span></label></div>
+    ${S.calMode === "fechas" ? '<button class="btn primary" data-act="newDue">+ Fecha</button>' : '<button class="btn primary" data-act="newEvent">+ Evento</button>'}</div>`;
+  if (S.calMode === "fechas") return head + fechasBody();
   if (S.calMode === "lista") {
     const from = t, to = ymd(addDays(new Date(), 60));
-    const mp = eventsByDay(from, to); const days = Object.keys(mp).sort();
-    return head + filt + `<section class="card">${days.length ? days.map(d => `<div class="month-h">${esc(dayLabel(d))}${d === t ? " · hoy" : ""}</div><div class="list">${mp[d].map(x => evRow({...x, day:d}, false)).join("")}</div>`).join("") : `<div class="empty"><b>No hay eventos en los próximos 60 días</b>Probá mostrar más personas o categorías.</div>`}</section>`;
+    const mp = eventsByDay(from, to), dm = duesByDay(from, to); const days = [...new Set([...Object.keys(mp), ...Object.keys(dm)])].sort();
+    return head + filt + `<section class="card">${days.length ? days.map(d => `<div class="month-h">${esc(dayLabel(d))}${d === t ? " · hoy" : ""}</div><div class="list">${(dm[d] || []).map(dueEvRow).join("")}${(mp[d] || []).map(x => evRow({...x, day:d}, false)).join("")}</div>`).join("") : `<div class="empty"><b>No hay eventos en los próximos 60 días</b>Probá mostrar más personas o categorías.</div>`}</section>`;
   }
   let cells = "";
   for (let i = 0; i < 7; i++) cells += `<div class="dow">${DOWS[(ws + i) % 7]}</div>`;
   for (let i = 0; i < 42; i++) {
-    const d = addDays(gStart, i), ds = ymd(d), evs = map[ds] || [];
+    const d = addDays(gStart, i), ds = ymd(d), evs = map[ds] || [], dd = dmap[ds] || [];
+    const shownD = Math.min(2, dd.length), shownE = Math.min(evs.length, Math.max(1, 3 - shownD)), more = (dd.length - shownD) + (evs.length - shownE);
     const cls = ["cell", d.getMonth() !== m - 1 ? "out" : (d.getDay() === 0 || d.getDay() === 6 ? "we" : ""), ds === t ? "today" : "", ds === S.selDay ? "sel" : ""].join(" ");
-    cells += `<div class="${cls}" data-act="pickDay" data-d="${ds}" role="button" tabindex="0" ${ds === t ? 'aria-current="date"' : ""} aria-pressed="${ds === S.selDay}" aria-label="${esc(dayLabel(ds))}, ${evs.length ? evs.length + (evs.length === 1 ? " evento" : " eventos") : "sin eventos"}${evs.some(x => x.e.busy) ? ", con horarios ocupados" : ""}"><span class="dn">${d.getDate()}</span>
-      ${evs.slice(0, 3).map(x => `<div class="ev ${x.e.busy ? "busy" : ""} ${x.e.vis === "private" ? "priv" : ""}" style="--c:${esc(evColor(x.e))}"><span>${x.e.allDay || !x.first ? "" : esc(x.e.start || "") + " "}${esc(evTitle(x.e))}</span></div>`).join("")}
-      ${evs.length > 3 ? `<span class="cell-more">+${evs.length - 3} más</span>` : ""}</div>`;
+    cells += `<div class="${cls}" data-act="pickDay" data-d="${ds}" role="button" tabindex="0" ${ds === t ? 'aria-current="date"' : ""} aria-pressed="${ds === S.selDay}" aria-label="${esc(dayLabel(ds))}, ${evs.length ? evs.length + (evs.length === 1 ? " evento" : " eventos") : "sin eventos"}${dd.length ? ", " + dd.map(x => x.title).join(", ") : ""}${evs.some(x => x.e.busy) ? ", con horarios ocupados" : ""}"><span class="dn">${d.getDate()}</span>
+      ${dd.slice(0, shownD).map(x => `<div class="ev due ${x.scope === "private" ? "priv" : ""}" style="--c:${esc(dueCat(x.cat).color)}"><span>${dueEmoji(x)} ${esc(x.title)}</span></div>`).join("")}
+      ${evs.slice(0, shownE).map(x => `<div class="ev ${x.e.busy ? "busy" : ""} ${x.e.vis === "private" ? "priv" : ""}" style="--c:${esc(evColor(x.e))}"><span>${x.e.allDay || !x.first ? "" : esc(x.e.start || "") + " "}${esc(evTitle(x.e))}</span></div>`).join("")}
+      ${more > 0 ? `<span class="cell-more">+${more} más</span>` : ""}</div>`;
   }
-  const sel = (map[S.selDay] || eventsByDay(S.selDay, S.selDay)[S.selDay] || []);
+  const sel = (map[S.selDay] || eventsByDay(S.selDay, S.selDay)[S.selDay] || []), selD = dmap[S.selDay] || duesByDay(S.selDay, S.selDay)[S.selDay] || [];
   return head + filt + `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));align-items:start">
     <section class="card cal-wrap" style="grid-column:span 2;padding:12px">
       <div class="row" style="margin-bottom:10px"><button class="icon-btn" data-act="calNav" data-n="-1" aria-label="Mes anterior">‹</button>
@@ -1268,9 +1281,9 @@ V.agenda = () => {
         <button class="btn sm spacer" data-act="calToday">Hoy</button></div>
       <div class="cal">${cells}</div>
     </section>
-    <section class="card" id="dayPanel"><div class="row"><h2 style="margin:0;text-transform:capitalize">${esc(dayLabel(S.selDay))}</h2><button class="btn sm spacer" data-act="newEvent" data-d="${S.selDay}">+ Agregar</button></div>
-      <div class="list" style="margin-top:8px">${sel.length ? sel.map(x => evRow({...x, day:S.selDay}, false)).join("") : `<div class="empty"><b>Día libre</b>Tocá + Agregar para sumar un plan.</div>`}</div>
-      <p class="small muted" style="margin:12px 0 0">Los bloques rayados son horarios ocupados de otra persona que eligió no mostrar los detalles.</p>
+    <section class="card" id="dayPanel"><div class="row"><h2 style="margin:0;text-transform:capitalize">${esc(dayLabel(S.selDay))}</h2><button class="btn sm spacer" data-act="newDueOn" data-d="${S.selDay}">+ Fecha</button><button class="btn sm" data-act="newEvent" data-d="${S.selDay}">+ Evento</button></div>
+      <div class="list" style="margin-top:8px">${selD.map(dueEvRow).join("")}${sel.length ? sel.map(x => evRow({...x, day:S.selDay}, false)).join("") : selD.length ? "" : `<div class="empty"><b>Día libre</b>Tocá + Agregar para sumar un plan.</div>`}</div>
+      ${sel.some(x => x.e.busy) ? `<p class="small muted" style="margin:12px 0 0">Los bloques rayados son horarios ocupados de otra persona que eligió no mostrar los detalles.</p>` : ""}
     </section></div>`;
 };
 
@@ -1728,10 +1741,10 @@ function sortedChores(onlyMine) {
 }
 function hogarHead(btn) {
   return `<div class="page-head"><h1>Hogar</h1>${helpBtn("hogar")}
-    <div class="seg hseg" role="group" aria-label="Sección">${[["tareas","Tareas"],["listas","Listas"],["fechas","Fechas"],["decidir","Decidir"],["mascotas","Mascotas"]].map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+    <div class="seg hseg" role="group" aria-label="Sección">${[["tareas","Tareas"],["listas","Listas"],["decidir","Decidir"],["mascotas","Mascotas"]].map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
     ${btn}</div>`;
 }
-V.hogar = () => S.hTab === "listas" ? V.listas() : S.hTab === "fechas" ? V.fechas() : S.hTab === "decidir" ? V.decidir() : S.hTab === "mascotas" ? V.mascotas() : V.tareas();
+V.hogar = () => S.hTab === "listas" ? V.listas() : S.hTab === "decidir" ? V.decidir() : S.hTab === "mascotas" ? V.mascotas() : V.tareas();
 V.tareas = () => {
   const head = hogarHead('<button class="btn primary" data-act="newChore">+ Tarea</button>');
   if (!Object.keys(S.chores).length) return head + `<section class="card"><div class="empty"><b>Organicen las tareas de la casa</b>Cada tarea se repite sola, se turnan entre ustedes y queda registrado quién hizo qué.
@@ -2207,6 +2220,28 @@ function allDues() {
   return [...Object.values(S.dues).map(d => ({...d, scope:"shared"})), ...Object.values(S.priv.dues || {}).map(d => ({...d, scope:"private"}))]
     .filter(d => !d.doneAt).map(d => ({...d, days:daysBetween(todayS(), d.due)})).sort((a, b) => a.days - b.days);
 }
+// Fechas en el calendario: la próxima y, si se repite, las siguientes dentro del rango.
+const dueEmoji = d => d.cat === "familia" ? "🎉" : d.cat === "mascota" ? "🐾" : "⏰";
+function duesByDay(from, to) {
+  const out = {};
+  for (const d of allDues()) {
+    if (d.owner && S.hiddenPeople.includes(d.owner)) continue;
+    let x = d.due, i = 0;
+    while (x && x <= to && i++ < 400) {
+      if (x >= from) (out[x] ||= []).push(d);
+      if (d.unit === "once") break;
+      x = addInterval(d.due, i * (d.n || 1) * (d.unit === "year" ? 12 : 1), "month");
+    }
+  }
+  return out;
+}
+function dueEvRow(d) {
+  const c = dueCat(d.cat);
+  return `<div class="ev-row click" data-act="editDue" data-id="${esc(d.id)}" data-scope="${d.scope}" style="--c:${esc(c.color)}">
+    <div class="time">${dueEmoji(d)}</div><div class="bar"></div>
+    <div class="grow" style="min-width:0;flex:1"><div class="t" style="font-weight:600;overflow-wrap:anywhere">${esc(d.title)}${d.scope === "private" ? ' <span class="tag">Solo yo</span>' : ""}</div>
+      <div class="small muted" style="margin-top:3px">${esc(c.name)} · ${esc(dueEvery(d))}</div></div></div>`;
+}
 const duePath = d => d.scope === "private" ? privPath(d.id) : "dues/" + d.id;
 const findDue = (id, scope) => { const d = scope === "private" ? S.priv.dues?.[id] : S.dues[id]; return d ? {...d, scope, days:daysBetween(todayS(), d.due)} : null; };
 function dueDateBadge(d) {
@@ -2230,17 +2265,16 @@ function dueRow(d) {
       <div style="margin-top:4px">${dueDateBadge(d)}</div></div>
     ${near ? `<button class="btn sm primary" data-act="doneDue" data-id="${esc(d.id)}" data-scope="${d.scope}">Ya está</button>` : ""}</div>`;
 }
-V.fechas = () => {
+function fechasBody() {
   const ds = allDues();
-  const head = hogarHead('<button class="btn primary" data-act="newDue">+ Fecha</button>');
-  if (!ds.length) return head + `<section class="card"><div class="empty"><b>¿Qué no se nos puede pasar?</b>VTV, patente, seguro, monotributo, pasaporte, vacunas, cumpleaños… La app te los recuerda en Inicio unos días antes.
+  if (!ds.length) return `<section class="card"><div class="empty"><b>¿Qué no se nos puede pasar?</b>VTV, patente, seguro, monotributo, pasaporte, vacunas, cumpleaños… Aparecen en el calendario y la app te los recuerda.
     <div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary" data-act="newDue">Agregar la primera</button></div></div></section>`;
   const soon = ds.filter(d => d.days <= (d.lead ?? 7)), later = ds.filter(d => d.days > (d.lead ?? 7));
-  return head + `<section class="card" style="max-width:760px"><div class="card-h"><span class="ic">${UI.cal}</span><h2>Vencimientos y fechas</h2></div>
+  return `<section class="card" style="max-width:760px"><div class="card-h"><span class="ic">${UI.cal}</span><h2>Vencimientos y fechas</h2></div>
     ${soon.length ? `<div class="month-h">Se viene</div><div class="list">${soon.map(dueRow).join("")}</div>` : ""}
     ${later.length ? `<div class="month-h">Más adelante</div><div class="list">${later.map(dueRow).join("")}</div>` : ""}
-    <p class="small muted" style="margin:10px 0 0">Aparecen en Inicio, en "Para esta semana", unos días antes de vencer.</p></section>`;
-};
+    <p class="small muted" style="margin:10px 0 0">Se ven en el calendario y, cuando se acercan, en Inicio.</p></section>`;
+}
 function dueSheet(d, preset) {
   const isNew = !d; const me = meId();
   const x = d || {id:newId(), title:"", cat:"otro", due:todayS(), unit:"year", n:1, lead:7, owner:null, scope:"shared", note:"", ...(preset || {})};
@@ -2254,7 +2288,7 @@ function dueSheet(d, preset) {
     <div class="frow">
       <label class="field"><span>Se repite</span><select class="input" name="unit">${[["once","Una vez"],["month","Cada N meses"],["year","Cada N años"]].map(([v, l]) => `<option value="${v}" ${x.unit === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="field" data-nrow><span>N</span><input class="input" type="number" name="n" min="1" max="50" value="${esc(Number(x.n) || 1)}"></label>
-      <label class="field"><span>Avisar</span><select class="input" name="lead">${[3, 7, 15, 30, 60].map(v => `<option value="${v}" ${Number(x.lead) === v ? "selected" : ""}>${v} días antes</option>`).join("")}</select></label>
+      <label class="field"><span>Primer aviso</span><select class="input" name="lead">${[0, 1, 3, 7, 15, 30, 60].map(v => `<option value="${v}" ${Number(x.lead ?? 7) === v ? "selected" : ""}>${v === 0 ? "El mismo día" : v === 1 ? "1 día antes" : v + " días antes"}</option>`).join("")}</select><small class="muted">Además te avisamos el día anterior y el mismo día.</small></label>
     </div>
     <label class="field"><span>Quién se encarga</span><select class="input" name="owner"><option value="">Sin asignar</option>${peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === x.owner ? "selected" : ""}>${esc(p.id === me ? "Yo" : p.name)}</option>`).join("")}</select></label>
     ${isNew ? `<div class="field"><span>¿Quién la ve?</span><div class="seg"><label><input type="radio" name="scope" value="shared" checked><span>Compartida</span></label><label><input type="radio" name="scope" value="private"><span>Solo yo</span></label></div><small class="muted">"Solo yo" sirve, por ejemplo, para la idea de regalo de un cumple.</small></div>` : ""}
@@ -2268,7 +2302,7 @@ function dueSheet(d, preset) {
     const title = (fd.get("title") || "").trim(); if (!title) return formErr("Poné qué vence o qué fecha es.", "title");
     const due = fd.get("due"); if (!YMD.test(due || "")) return formErr("Elegí una fecha.", "due");
     const scope = isNew ? fd.get("scope") : x.scope;
-    const data = {id:x.id, pet:x.pet || null, title, due, cat:fd.get("cat"), unit:fd.get("unit"), n:Math.min(50, Math.max(1, parseInt(fd.get("n"), 10) || 1)), lead:Number(fd.get("lead")) || 7, owner:fd.get("owner") || null, note:(fd.get("note") || "").trim(), createdBy:x.createdBy || me, createdAt:x.createdAt || Date.now(), updatedAt:Date.now()};
+    const data = {id:x.id, pet:x.pet || null, title, due, cat:fd.get("cat"), unit:fd.get("unit"), n:Math.min(50, Math.max(1, parseInt(fd.get("n"), 10) || 1)), lead:Number.isFinite(parseInt(fd.get("lead"), 10)) ? parseInt(fd.get("lead"), 10) : 7, owner:fd.get("owner") || null, note:(fd.get("note") || "").trim(), createdBy:x.createdBy || me, createdAt:x.createdAt || Date.now(), updatedAt:Date.now()};
     if (scope === "private") await put(privPath(x.id), {...data, kind:"due"}); else await put("dues/" + x.id, data);
     if (fd.get("cat") === "familia") { const g0 = giftOf(x.id); const idea = (fd.get("giftIdea") || "").trim(), doneT = (fd.get("giftDone") || "").trim();
       if (idea || doneT || g0) await put(privPath("gift_" + x.id), {id:"gift_" + x.id, kind:"gift", due:x.id, idea, history:[...(g0?.history || []), ...(doneT ? [{year:new Date().getFullYear(), text:doneT}] : [])].slice(-20)}); }
@@ -2464,7 +2498,7 @@ function reminderSheet(kind, obj) {
     <p style="margin:0">Se abre <b>Google Calendar</b> con el recordatorio armado${kind === "chore" && obj.unit !== "once" || kind === "due" && obj.unit !== "once" || kind === "event" && obj.repeat && obj.repeat !== "none" ? " y repetido" : ""}. Guardalo ahí y te va a avisar en el celular.</p>
     ${kind !== "event" || base.time ? `<label class="field"><span>¿A qué hora?</span><input class="input" type="time" name="time" value="${esc(base.time || "20:00")}"></label>` : ""}
     ${byDayMine ? `<label class="row small"><input type="checkbox" name="mine" checked> Solo los días que me tocan</label>` : ""}
-    ${kind === "due" ? `<label class="row small"><input type="checkbox" name="early" ${obj.lead ? "checked" : ""}> Avisarme ${Number(obj.lead) || 7} días antes (en vez del mismo día)</label>` : ""}
+    ${kind === "due" && Number(obj.lead) > 0 ? `<label class="row small"><input type="checkbox" name="early" checked> Avisarme ${Number(obj.lead)} ${Number(obj.lead) === 1 ? "día" : "días"} antes (en vez del mismo día)</label>` : ""}
     ${kind === "chore" && obj.assign === "rotate" ? `<p class="small muted" style="margin:0">Como se turnan, el aviso sale todas las veces; en la app ves a quién le toca.</p>` : ""}
     <a class="btn primary" data-gcal target="_blank" rel="noopener noreferrer" href="#">Abrir Google Calendar</a>
     <p class="small muted" style="margin:0">A Google se envían el nombre, la fecha y la repetición. Cada uno lo agrega en su propio calendario. ¿Usás el calendario del iPhone? Sumá tu cuenta de Google en Ajustes del iPhone y vas a ver el recordatorio ahí.</p>`, null, f => {
@@ -2482,12 +2516,12 @@ function reminderSheet(kind, obj) {
   });
 }
 const HELP = {
-  agenda:`<p>La agenda es compartida, pero cada evento elige quién lo ve:</p><ul><li><b>Todos</b>: lo ven completo.</li><li><b>Como ocupado</b>: tu pareja ve que estás ocupado, sin detalles. Podés mostrar solo la franja (mañana, tarde, noche).</li><li><b>Solo yo</b>: queda en tu espacio privado.</li></ul><p>Si un evento choca con otro, la app te avisa al cargarlo. En un evento ya creado podés armar un <b>recordatorio en tu calendario</b>.</p>`,
+  agenda:`<p>La agenda es compartida, pero cada evento elige quién lo ve:</p><ul><li><b>Todos</b>: lo ven completo.</li><li><b>Como ocupado</b>: tu pareja ve que estás ocupado, sin detalles. Podés mostrar solo la franja (mañana, tarde, noche).</li><li><b>Solo yo</b>: queda en tu espacio privado.</li></ul><p>En <b>Fechas</b> están los vencimientos, cumpleaños y fechas especiales; también se ven en el calendario con ⏰ o 🎉.</p><p>Si un evento choca con otro, la app te avisa al cargarlo. En un evento ya creado podés armar un <b>recordatorio en tu calendario</b>.</p>`,
   cuentas:`<p>Cada uno carga lo que paga y la app calcula <b>quién le pasa cuánto a quién</b>, con la menor cantidad de transferencias.</p><ul><li>Dividí mitad y mitad, por montos, por porcentaje o proporcional a los ingresos (eso se configura en el grupo).</li><li>Cargá compras <b>en cuotas</b>: cada cuota cuenta en su mes.</li><li>Los <b>gastos fijos</b> (alquiler, expensas) se cargan con un toque cada mes.</li><li>Con pesos y dólares, podés <b>pasar todo a pesos</b> con la cotización que acuerden.</li></ul>`,
   finanzas:`<p>Mis finanzas es <b>solo tuya</b>. Ves tus ingresos, tus gastos y tu parte de los gastos compartidos.</p><ul><li><b>Cuentas</b>: efectivo, banco, Mercado Pago, con su saldo.</li><li><b>Tarjetas</b>: cuánto viene en cada resumen, contando las cuotas.</li><li><b>Proyección</b>: cómo terminarías el mes a este ritmo.</li><li><b>Presupuestos</b> por categoría y <b>metas de ahorro</b>, propias o compartidas.</li></ul>`,
   tareas:`<p>Las tareas se repiten solas: cada tanto o en <b>ciertos días</b> (por ejemplo, martes y domingos, o una semana sí y otra no). Se pueden turnar, asignar a una persona o a cada día alguien distinto.</p><ul><li><b>Hecha ✓</b> la marca y programa la próxima. Si se pasó el día, con una vez alcanza para ponerse al día.</li><li><b>La tomo yo</b> si querés hacer la del otro.</li><li>En cada tarea: <b>pausar</b> (viajes), <b>saltear</b>, <b>mover una fecha</b> y armar un <b>recordatorio en tu calendario</b>.</li></ul>`,
   listas:`<p>Listas compartidas para el súper, pendientes o lo que quieran. Tildá lo hecho y borrá los tachados de una vez.</p>`,
-  fechas:`<p>Vencimientos (VTV, patente, seguro, monotributo…) y fechas especiales. Aparecen en Inicio unos días antes. En los cumpleaños podés anotar <b>ideas de regalo</b> que solo ves vos.</p>`,
+  fechas:`<p>Vencimientos (VTV, patente, seguro, monotributo…) y fechas especiales. Se ven en el calendario con ⏰, 🐾 o 🎉 y aparecen en Inicio cuando se acercan. Te avisamos el día del primer aviso que elijas, el día anterior y el mismo día. En los cumpleaños podés anotar <b>ideas de regalo</b> que solo ves vos.</p>`,
   decidir:`<p>Armen una votación (qué comer, qué ver, qué hacer). Cada uno dice sí o no y <b>solo se ven las coincidencias</b> cuando votaron todos.</p>`,
   mascotas:`<p>Una ficha por mascota con veterinario, alimento, medicación y peso. Sus vacunas y antiparasitarios se cargan como fechas y te avisan antes.</p>`
 };
@@ -3081,7 +3115,7 @@ async function ensureGroup(pid, extra = []) {
 
 /* ---------- actions ---------- */
 const A = {
-  go: t => { S.view = t.dataset.v; if (["listas", "tareas", "fechas", "decidir", "mascotas"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
+  go: t => { S.view = t.dataset.v; if (S.view === "fechas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir", "mascotas"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
   closeSheet,
   claim: t => { const p = S.people[t.dataset.id]; if (p) claimSheet(p); },
   saveFx: async t => { const cur = t.dataset.cur; const v = parseAmt(document.getElementById("fx-" + cur)?.value); if (!(v > 0)) return toast("Poné cuánto vale en pesos, por ejemplo 1200."); await saveCfg({fx:{...(cfg().fx || {}), [cur]:{rate:v, date:todayS()}}}); toast(`Cotización guardada: 1 ${cur} = ${money(v, BASE)}`); },
@@ -3159,9 +3193,10 @@ const A = {
   delCat: async t => { const key = t.dataset.key; const list = cfg()[key].filter((_, i) => i !== Number(t.dataset.i)); if (list.length) await saveCfg({[key]:list}); }
 };
 const CHG = {
+  gcalOn: t => saveCfg({gcal:t.checked}).then(() => toast(t.checked ? "Listo: en menos de 15 minutos aparece en Google Calendar" : "Listo: se borran las copias de Google Calendar")),
   notifFlag: t => savePrefs({notif:{...NOTIF_DEF, ...(prefs().notif || {}), [t.dataset.k]:t.checked}}),
   notifTime: t => { if (/^\d{2}:\d{2}$/.test(t.value)) savePrefs({notif:{...NOTIF_DEF, ...(prefs().notif || {}), [t.dataset.k]:t.value}}); },
-  calMode: t => { S.calMode = t.value; store.set("calMode", S.calMode); render(); },
+  calMode: t => { S.calMode = t.value; if (t.value !== "fechas") store.set("calMode", S.calMode); render(); },
   group: t => { S.groupId = t.value; store.set("groupId", S.groupId); render(); },
   qCat: t => { S.qCat = t.value; render(); },
   finCur: t => { S.finCur = t.value; render(); },
@@ -3192,9 +3227,9 @@ const DO = {
 Object.assign(A, {
   quickAdd: () => {
     if (S.view === "cuentas") return expenseSheet(null);
-    if (S.view === "agenda") return eventSheet(null, S.selDay);
+    if (S.view === "agenda") return S.calMode === "fechas" ? dueSheet(null) : eventSheet(null, S.selDay);
     if (S.view === "finanzas") return txSheet(null);
-    if (S.view === "hogar") return S.hTab === "listas" ? (sortedLists().length ? itemSheet() : listSheet(null)) : S.hTab === "fechas" ? dueSheet(null) : S.hTab === "decidir" ? newPollSheet() : S.hTab === "mascotas" ? petSheet(null) : choreSheet(null);
+    if (S.view === "hogar") return S.hTab === "listas" ? (sortedLists().length ? itemSheet() : listSheet(null)) : S.hTab === "decidir" ? newPollSheet() : S.hTab === "mascotas" ? petSheet(null) : choreSheet(null);
     quickAddSheet();
   },
   qaExpense: () => { closeSheet(); expenseSheet(null); },
@@ -3232,6 +3267,7 @@ Object.assign(A, {
   qaPoll: () => { closeSheet(); newPollSheet(); },
   qaThanks: () => { closeSheet(); thanksSheet(); },
   newDue: () => dueSheet(null),
+  newDueOn: t => dueSheet(null, {due:t.dataset.d}),
   editDue: t => { const d = findDue(t.dataset.id, t.dataset.scope); if (d) dueSheet(d); },
   doneDue: t => { const d = findDue(t.dataset.id, t.dataset.scope); if (d) doneDueSheet(d); },
   ownDue: async t => { await patch("dues/" + t.dataset.id, {owner:meId()}); toast("Listo, te encargás vos"); },

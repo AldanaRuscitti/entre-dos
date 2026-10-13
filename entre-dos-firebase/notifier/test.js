@@ -150,3 +150,96 @@ test("eventos con horario de hoy para avisar antes", () => {
   const list = timedToday(L, clean(shared()), userA(), DAY);
   assert.deepStrictEqual(list.map(x => x.start + " " + x.title), ["18:00 Psicóloga", "19:00 Yoga", "21:00 Cena con amigos"]);
 });
+
+// ---------- Google Calendar ----------
+const gcal = require("./gcal");
+test("calendario: eventos compartidos, ocupados y fechas; nunca lo privado", () => {
+  const s = clean(shared());
+  s.events.e7 = {id:"e7", title:"Feria", date:"2026-10-20", endDate:"2026-10-22", allDay:true, owner:"pA"};
+  s.events.e8 = {id:"e8", title:"Gimnasio", date:"2026-10-05", start:"07:00", end:"08:30", repeat:"weekly", until:"2026-12-31", skip:["2026-10-12"], owner:"pB"};
+  const it = gcal.items(L, s, "America/Argentina/Buenos_Aires");
+  assert.ok(!Object.values(it).some(b => /Psicóloga/.test(b.summary)), "lo 'Solo yo' no está en shared");
+  assert.equal(it["e:e3"].summary, "Lucas: ocupado");
+  assert.equal(it["e:e3"].description, "Entre Dos");
+  assert.deepStrictEqual(it["e:e1"].start, {dateTime:"2026-10-13T21:00:00", timeZone:"America/Argentina/Buenos_Aires"});
+  assert.equal(it["e:e1"].end.dateTime, "2026-10-13T22:00:00", "sin hora de fin → 1 hora");
+  assert.match(it["e:e1"].description, /Con: Aldi, Lucas/);
+  assert.deepStrictEqual([it["e:e7"].start, it["e:e7"].end], [{date:"2026-10-20"}, {date:"2026-10-23"}], "todo el día: fin exclusivo");
+  assert.deepStrictEqual(it["e:e8"].recurrence, ["RRULE:FREQ=WEEKLY;UNTIL=20270101T025959Z", "EXDATE;TZID=America/Argentina/Buenos_Aires:20261012T070000"]);
+  assert.equal(it["e:e8"].end.dateTime, "2026-10-05T08:30:00");
+  assert.deepStrictEqual(it["e:e4"].recurrence, ["RRULE:FREQ=WEEKLY"]);
+  assert.equal(it["d:d2"].summary, "🎉 Cumpleaños de mamá");
+  assert.deepStrictEqual(it["d:d2"].recurrence, ["RRULE:FREQ=YEARLY;INTERVAL=1"]);
+  assert.deepStrictEqual(it["d:d3"].recurrence, ["RRULE:FREQ=MONTHLY;INTERVAL=2"]);
+  assert.equal(it["d:d1"].summary, "⏰ VTV");
+});
+test("calendario: solo cambia lo que cambió", () => {
+  const want = {a:{summary:"A"}, b:{summary:"B"}};
+  let ops = gcal.diff(want, {});
+  assert.deepStrictEqual(ops.map(o => o.op + o.k), ["inserta", "insertb"]);
+  const map = {a:{id:"1", h:gcal.hash(want.a)}, b:{id:"2", h:"viejo"}, c:{id:"3", h:"x"}};
+  ops = gcal.diff(want, map);
+  assert.deepStrictEqual(ops.map(o => o.op + o.k), ["updateb", "deletec"]);
+});
+test("calendario: firma el acceso y aplica altas, cambios y bajas", async () => {
+  const crypto = require("node:crypto");
+  const {privateKey, publicKey} = crypto.generateKeyPairSync("rsa", {modulusLength:2048, privateKeyEncoding:{type:"pkcs8", format:"pem"}, publicKeyEncoding:{type:"spki", format:"pem"}});
+  const calls = []; const real = global.fetch;
+  global.fetch = async (url, opt) => {
+    calls.push(opt.method + " " + url.replace(/^https:\/\/[^/]+/, ""));
+    if (url.includes("oauth2")) {
+      const [h, p, sig] = new URLSearchParams(opt.body).get("assertion").split(".");
+      assert.ok(crypto.verify("RSA-SHA256", Buffer.from(h + "." + p), publicKey, Buffer.from(sig, "base64url")), "firma válida");
+      assert.equal(JSON.parse(Buffer.from(p, "base64url")).iss, "sa@x.iam.gserviceaccount.com");
+      return {ok:true, status:200, json:async () => ({access_token:"T"})};
+    }
+    if (opt.method === "PUT") return {ok:false, status:404, json:async () => ({error:{message:"gone"}})};
+    if (opt.method === "DELETE") return {ok:true, status:204};
+    return {ok:true, status:200, json:async () => ({id:"g" + calls.length})};
+  };
+  try {
+    const map = {b:{id:"old", h:"x"}, c:{id:"3", h:"y"}};
+    const ops = gcal.diff({a:{summary:"A"}, b:{summary:"B"}}, map);
+    const r = await gcal.apply({client_email:"sa@x.iam.gserviceaccount.com", private_key:privateKey}, "cal@group.calendar.google.com", ops, map);
+    assert.deepStrictEqual(r, {done:3, complete:true});
+    assert.deepStrictEqual(Object.keys(map).sort(), ["a", "b"]);
+    assert.notEqual(map.b.id, "old", "si el evento ya no existe en Google, lo vuelve a crear");
+    assert.ok(calls.some(c => c.startsWith("DELETE /calendar/v3/calendars/cal%40group.calendar.google.com/events/3")));
+  } finally { global.fetch = real; }
+});
+
+test("calendario: fin de mes, pasada la medianoche y eventos viejos", () => {
+  const s2 = clean(shared());
+  s2.events = {
+    m31:{id:"m31", title:"Alquiler", date:"2026-01-31", allDay:true, repeat:"monthly", owner:"pA"},
+    noche:{id:"noche", title:"Fiesta", date:"2026-10-20", start:"23:30", end:"01:00", owner:"pA"},
+    viejo:{id:"viejo", title:"Viejo", date:"2025-01-01", owner:"pA"},
+    rep:{id:"rep", title:"Clase", date:"2024-01-01", start:"10:00", repeat:"weekly", owner:"pA"}
+  };
+  s2.dues = {b:{id:"b", title:"Cumple", cat:"familia", due:"2028-02-29", unit:"year", n:1}};
+  const it = gcal.items(L, s2, "America/Argentina/Buenos_Aires", DAY);
+  assert.deepStrictEqual(it["e:m31"].recurrence, ["RRULE:FREQ=MONTHLY;BYMONTHDAY=28,29,30,31;BYSETPOS=-1"]);
+  assert.equal(it["e:noche"].end.dateTime, "2026-10-21T01:00:00");
+  assert.ok(!it["e:viejo"], "no copia eventos de hace más de un mes");
+  assert.ok(it["e:rep"], "los que se siguen repitiendo sí");
+  assert.equal(it["e:rep"].extendedProperties.private.entreDos, "e:rep");
+  assert.deepStrictEqual(it["d:b"].recurrence, ["RRULE:FREQ=YEARLY;INTERVAL=1;BYMONTH=2;BYMONTHDAY=28,29;BYSETPOS=-1"]);
+  assert.equal(gcal.items(L, s2, "Zona/Mala", DAY)["e:noche"].start.timeZone, "America/Argentina/Buenos_Aires");
+});
+test("calendario: si Google pide esperar, corta y deja el resto para la próxima", async () => {
+  const crypto = require("node:crypto");
+  const {privateKey} = crypto.generateKeyPairSync("rsa", {modulusLength:2048, privateKeyEncoding:{type:"pkcs8", format:"pem"}, publicKeyEncoding:{type:"spki", format:"pem"}});
+  const real = global.fetch; let n = 0;
+  global.fetch = async (url) => {
+    if (url.includes("oauth2")) return {ok:true, status:200, json:async () => ({access_token:"T"})};
+    n++;
+    if (n === 2) return {ok:false, status:403, json:async () => ({error:{errors:[{reason:"rateLimitExceeded"}]}})};
+    return {ok:true, status:200, json:async () => ({id:"g" + n})};
+  };
+  try {
+    const map = {};
+    const r = await gcal.apply({client_email:"a@b", private_key:privateKey}, "c", gcal.diff({a:{}, b:{}, c:{}}, {}), map);
+    assert.deepStrictEqual(r, {done:1, complete:false});
+    assert.deepStrictEqual(Object.keys(map), ["a"]);
+  } finally { global.fetch = real; }
+});

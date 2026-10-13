@@ -5,14 +5,16 @@ const {initializeApp, cert} = require("firebase-admin/app");
 const {getFirestore} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 const {load} = require("./extract");
-const {plan, digest, localNow} = require("./logic");
+const {plan, digest, localNow, DEF_TZ} = require("./logic");
+const gcal = require("./gcal");
 
 const SA = process.env.FIREBASE_SERVICE_ACCOUNT;
 const TG = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const APP_URL = (process.env.APP_URL || "").trim();
-if (!SA) { console.error("Falta el secreto FIREBASE_SERVICE_ACCOUNT"); process.exit(1); }
+const GCAL_ID = (process.env.GCAL_ID || "").trim();
+if (!SA) { console.log("::error::Falta el secreto FIREBASE_SERVICE_ACCOUNT (Settings → Secrets and variables → Actions)"); process.exit(1); }
 let creds;
-try { creds = JSON.parse(SA); } catch { console.error("El secreto FIREBASE_SERVICE_ACCOUNT no es un JSON válido: pegá el contenido completo del archivo .json"); process.exit(1); }
+try { creds = JSON.parse(SA); } catch { console.log("::error::El secreto FIREBASE_SERVICE_ACCOUNT no es un JSON válido: pegá el contenido completo del archivo .json"); process.exit(1); }
 initializeApp({credential:cert(creds)});
 const db = getFirestore();
 const L = load();
@@ -21,12 +23,13 @@ const alive = snap => Object.fromEntries(snap.docs.map(d => [d.id, {...d.data(),
 const userCol = uid => db.collection("data").doc("users").collection(uid);
 
 // ---------- lecturas (pocas: el plan gratis de Firestore da 50.000 por día) ----------
-const cache = {};
+const cache = {}, colCache = {};
+const readCol = c => (colCache[c] ||= db.collection(c).get().then(alive));
 async function sharedData(kind, day) {
   if (cache[kind]) return cache[kind];
   const out = {};
   const cols = kind === "events" ? ["people", "events"] : ["people", "events", "chores", "dues", "polls", "thanks", "fixed", "groups"];
-  await Promise.all(cols.map(async c => { out[c] = alive(await db.collection(c).get()); }));
+  await Promise.all(cols.map(async c => { out[c] = await readCol(c); }));
   if (kind === "full") {
     // Para saber el estado de las tareas alcanza con lo hecho en los últimos ~13 meses.
     out.choreLog = alive(await db.collection("choreLog").where("date", ">=", L.ymdShift(day, -400)).get());
@@ -120,6 +123,38 @@ async function telegram(users, now) {
   await stRef.set({offset:updates[updates.length - 1].update_id + 1}, {merge:true});
 }
 
+// ---------- Google Calendar (para verlo en el iPhone) ----------
+// Solo si está prendido en la app (Ajustes → Avisos, lo ven los dos) y existe el secreto GCAL_ID.
+// Se actualiza cuando la app marca un cambio en la agenda (config/sync), con un aviso de prueba, o una vez por día.
+async function calendar(users, now) {
+  const ref = db.collection("notifState").doc("_gcal");
+  const [stDoc, mainDoc, syncDoc] = await Promise.all([ref.get(), db.collection("config").doc("main").get(), db.collection("config").doc("sync").get()]);
+  const st = stDoc.data() || {};
+  const on = !!GCAL_ID && mainDoc.get("gcal") === true;
+  const map = {...(st.map || {})};
+  const save = extra => ref.set({id:st.id || null, at:st.at || 0, testSeen:st.testSeen || 0, ...extra, map});
+  // Cambió el calendario o se apagó: borrar las copias del calendario anterior.
+  if (st.id && Object.keys(map).length && (!on || st.id !== GCAL_ID)) {
+    try { await gcal.apply(creds, st.id, gcal.diff({}, map), map); } catch (e) { console.log(`::warning::Calendario de Google: no se pudieron borrar las copias viejas (${e.status || "error"})`); }
+    await save({});
+  }
+  if (!on) return;
+  const testMax = Math.max(0, ...users.map(u => u.settings?.testAt || 0));
+  const asked = testMax > (st.testSeen || 0);
+  const changed = (syncDoc.get("at") || 0) > (st.at || 0);
+  if (st.id === GCAL_ID && !asked && !changed && !st.pending && now.getTime() - (st.at || 0) < 24 * 3600e3) return;
+  const startedAt = now.getTime();
+  const [people, events, dues] = await Promise.all(["people", "events", "dues"].map(readCol));
+  let tz = users.find(u => u.settings?.tz)?.settings.tz || DEF_TZ;
+  if (!gcal.validTz(tz)) tz = DEF_TZ;
+  const ops = gcal.diff(gcal.items(L, {people, events, dues}, tz, localNow(now, tz).day), map);
+  const keep = {id:GCAL_ID, at:st.at || 0, testSeen:Math.max(testMax, st.testSeen || 0)};
+  let r = {complete:true};
+  try { if (ops.length) r = await gcal.apply(creds, GCAL_ID, ops, map, {onProgress:() => ref.set({...keep, pending:true, map})}); }
+  catch (e) { r = {complete:false}; console.log(`::warning::Calendario de Google: ${e.status ? "error " + e.status : e.message}`); }
+  finally { await ref.set({...keep, at:r.complete ? startedAt : keep.at, pending:!r.complete, map}); }
+}
+
 // ---------- principal ----------
 async function main() {
   const now = new Date();
@@ -130,6 +165,7 @@ async function main() {
     users.push({uid:c.id, settings:s.exists ? s.data() : {}});
   }
   await telegram(users, now);
+  await calendar(users, now).catch(e => console.log(`::warning::Calendario de Google: ${e.message}`));
   let total = 0;
   for (const user of users) {
     const ref = db.collection("notifState").doc(user.uid);
@@ -138,6 +174,6 @@ async function main() {
     if (r.msgs.length) total += await deliver(user, r.msgs);
     if (JSON.stringify(r.st) !== JSON.stringify(st)) await ref.set(r.st);
   }
-  console.log(`Listo: ${users.length} personas, ${total} avisos enviados.`);
+  console.log("Listo.");
 }
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch(e => { console.error(e && e.stack || String(e)); console.log(`::error::${String(e && e.message || e).split("\n")[0].slice(0, 300)}`); process.exit(1); });

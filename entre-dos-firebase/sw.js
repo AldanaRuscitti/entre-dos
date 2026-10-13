@@ -4,7 +4,7 @@ importScripts(
   "https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js",
   "./firebase-config.js"
 );
-const CACHE = "entredos-v1";
+const CACHE = "entredos-v2";
 const SHELL = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest", "./icons/icon-192.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener("activate", e => {
@@ -13,7 +13,7 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== location.origin) return;
-  e.respondWith(fetch(e.request).then(r => { if (r.ok) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); } return r; })
+  e.respondWith(fetch(e.request, {cache:"no-cache"}).then(r => { if (r.ok) { const cp = r.clone(); caches.open(CACHE).then(c => c.put(e.request, cp)); } return r; })
     .catch(() => caches.match(e.request).then(r => r || caches.match("./"))));
 });
 try {
