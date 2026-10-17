@@ -399,7 +399,10 @@ const HELP = `Soy el bot de avisos de Entre Dos.
 /yo 3500 farmacia — gasto personal (solo lo ves vos)
 /compra leche, pan — suma a la lista de compras
 /falta — lo que queda en la lista (/falta todo: todas)
+/precio yerba 4500 — anota cuánto salió algo (inflación del súper)
 /deshacer — borra lo último que cargaste acá (hasta 24 h)
+
+🎙️ También podés mandarme un audio o la foto de un ticket.
 
 Para conectarme, entrá a la app → Ajustes → Avisos → Telegram → Conectar.`;
 
@@ -469,5 +472,18 @@ function invRecapMsg(summary, ipcSeries) {
   return {ym, msg:{title:`📈 Tus inversiones en ${mes}`, body:lines.join("\n"), tag:"inv-" + ym}};
 }
 
-module.exports = {invRecapMsg, NOTIF_DEF, DEF_TZ, HELP, toMin, localNow, notifOf, useUser, digest, weekly, budgetAlerts, timedToday, plan, fixedWhen, fixedForMe, choreButtons,
+// /precio yerba 1kg 4500  (el monto puede ir al final o al principio) → documento de "prices" igual al de la app
+const priceKey = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b\d+\s*(kg|g|gr|l|lt|ml|u|un|x)\b/g, "").replace(/[^a-z0-9ñ ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+function parsePrecio(L, args, {me, day, nowMs}) {
+  const toks = String(args || "").trim().split(/\s+/).filter(Boolean);
+  if (toks.length < 2) return BAD("Escribí el producto y el precio, por ejemplo: /precio yerba 4500");
+  let a = takeAmount(L, toks.slice(-2).join(" ").match(/lucas?|mil|k$/i) ? toks.slice(-2) : toks.slice(-1)), text;
+  if (a) text = toks.slice(0, toks.length - (toks.slice(-2).join(" ").match(/lucas?|mil|k$/i) && !/^\$?[\d.,]+(k|lucas?|mil)$/i.test(toks[toks.length - 1]) ? 2 : 1)).join(" ");
+  else { a = takeAmount(L, toks); if (!a) return BAD("No encontré el precio. Ejemplo: /precio yerba 4500"); text = a.rest.join(" "); }
+  text = cap(text.trim()); if (!text) return BAD("¿De qué producto? Ejemplo: /precio yerba 4500");
+  const id = "p" + nowMs.toString(36) + Math.random().toString(36).slice(2, 6);
+  return {path:"prices/" + id, doc:plain({id, key:priceKey(text), text:text.slice(0, 120), price:a.amount, date:day, by:me, createdAt:nowMs, source:"telegram"}), reply:`🏷️ Anotado: ${text} ${"$" + Math.round(a.amount).toLocaleString("es-AR")}`};
+}
+
+module.exports = {parsePrecio, priceKey, invRecapMsg, NOTIF_DEF, DEF_TZ, HELP, toMin, localNow, notifOf, useUser, digest, weekly, budgetAlerts, timedToday, plan, fixedWhen, fixedForMe, choreButtons,
   parseCommand, takeAmount, parseGasto, parseYo, parseCompra, shopList, faltaText, choreTap, tgMarkup, markDone, newId, moneyShort};

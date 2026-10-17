@@ -31,6 +31,8 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           GCAL_ID: ${{ secrets.GCAL_ID }}
           BACKUP_PASS: ${{ secrets.BACKUP_PASS }}
+          TG_SECRET: ${{ secrets.TG_SECRET }}
+          BOT_URL: ${{ vars.BOT_URL }}
       # GitHub apaga los procesos programados después de 60 días sin cambios en el repositorio. Esto lo mantiene prendido.
       - name: Mantener activo
         if: always()

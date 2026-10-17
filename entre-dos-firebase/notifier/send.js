@@ -10,6 +10,7 @@ const {plan, digest, weekly, localNow, DEF_TZ, HELP, invRecapMsg} = logic;
 const gcal = require("./gcal");
 const backup = require("./backup");
 const BACKUP_PASS = process.env.BACKUP_PASS || "";
+const BOT_URL = (process.env.BOT_URL || "").replace(/\/$/, ""), BOT_KEY = process.env.TG_SECRET || "";
 
 const SA = process.env.FIREBASE_SERVICE_ACCOUNT;
 const TG = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
@@ -127,11 +128,12 @@ async function command(user, chat, cmd, args, now) {
     await tgSend(chat, m || {title:"Semana tranqui 🙌", body:"No hay nada anotado para los próximos días."});
     return null;
   }
-  if (cmd === "gasto" || cmd === "yo" || cmd === "compra" || cmd === "falta") {
+  if (cmd === "gasto" || cmd === "yo" || cmd === "compra" || cmd === "falta" || cmd === "precio") {
     const [people, groups, config, lists, items] = await Promise.all(["people", "groups", "config", "lists", "items"].map(readCol));
     const me = logic.useUser(L, {people, groups, config, lists, items}, {...user, priv:{}}, day);
     if (!me) return "No encontré tu perfil en Entre Dos. Entrá a la app y elegí tu perfil.";
     if (cmd === "falta") return logic.faltaText(L, args);
+    if (cmd === "precio") { const r = logic.parsePrecio(L, args, {me, day, nowMs}); if (r.error) return r.error; await db.doc(r.path).set(r.doc); await saveLast(user, [{path:r.path, hard:true}], now); return r.reply; }
     if (cmd === "gasto" || cmd === "yo") {
       const r = cmd === "gasto" ? logic.parseGasto(L, args, {me, day, nowMs, settings}) : logic.parseYo(L, args, {uid:user.uid, day, nowMs, settings});
       if (r.error) return r.error;
@@ -181,16 +183,35 @@ async function callback(users, cq, now) {
   if (r.log || r.already) await tgCall("editMessageReplyMarkup", {chat_id:chat, message_id:cq.message.message_id, reply_markup:logic.markDone(cq.message.reply_markup, data)}).catch(() => {});
 }
 
-async function telegram(users, now) {
+async function telegram(users, now, single) {
   if (!TG) return;
   const stRef = db.collection("notifState").doc("_telegram");
-  const offset = (await stRef.get()).get("offset") || 0;
   let updates;
-  try { updates = await tgCall("getUpdates", {offset, timeout:0, allowed_updates:["message", "callback_query"]}); }
-  catch (e) { console.log(`::warning::Telegram: no se pudieron leer los mensajes (${e.code || "error"})`); return; }
+  if (single) updates = single;
+  else if (BOT_URL && BOT_KEY) {
+    // Webhook en Cloudflare: los mensajes esperan en su cola; los traemos con la clave compartida
+    try { const r = await fetch(BOT_URL + "/pending", {headers:{"X-Key":BOT_KEY}}); updates = r.ok ? await r.json() : []; }
+    catch { console.log("::warning::Telegram: no se pudo leer la cola de Cloudflare"); return; }
+  } else {
+    const offset = (await stRef.get()).get("offset") || 0;
+    try { updates = await tgCall("getUpdates", {offset, timeout:0, allowed_updates:["message", "callback_query"]}); }
+    catch (e) { if (e.code !== 409) console.log(`::warning::Telegram: no se pudieron leer los mensajes (${e.code || "error"})`); return; }   // 409 = el bot ya recibe por webhook (Cloudflare)
+  }
   if (!updates.length) return;
   for (const u of updates) {
     try {
+      // ✅ de una propuesta hecha con IA (audio o foto): ejecuta el comando que quedó escrito en el mensaje
+      if (u.callback_query && u.callback_query.data === "ai:ok") {
+        const cq = u.callback_query, chat = String(cq.message?.chat?.id || "");
+        const user = users.find(x => x.settings?.tgChat && x.settings.tgChat === chat);
+        const line = String(cq.message?.text || "").split("\n").find(x => x.startsWith("→ "));
+        const pc = line ? logic.parseCommand(line.slice(2).trim()) : null;
+        await tgCall("editMessageReplyMarkup", {chat_id:chat, message_id:cq.message.message_id, reply_markup:{inline_keyboard:[]}}).catch(() => {});
+        if (!user || !pc) { await tgText(chat, HELP); continue; }
+        const reply = await command(user, chat, pc.cmd === "mañana" ? "manana" : pc.cmd, pc.args, now);
+        if (reply) await tgText(chat, reply);
+        continue;
+      }
       if (u.callback_query) { await callback(users, u.callback_query, now); continue; }
       const msg = u.message; if (!msg || !msg.text || !msg.chat) continue;
       const chat = String(msg.chat.id), text = msg.text.trim();
@@ -210,7 +231,8 @@ async function telegram(users, now) {
       if (reply) await tgText(chat, reply);
     } catch (e) { console.log(`::warning::Telegram: falló un comando (${e.code || "error"})`); }
   }
-  await stRef.set({offset:updates[updates.length - 1].update_id + 1}, {merge:true});
+  if (BOT_URL && BOT_KEY && !single) await fetch(BOT_URL + "/ack", {method:"POST", headers:{"X-Key":BOT_KEY, "content-type":"application/json"}, body:JSON.stringify({ids:updates.map(u => u.update_id)})}).catch(() => {});
+  else if (!single) await stRef.set({offset:updates[updates.length - 1].update_id + 1}, {merge:true});
 }
 
 // ---------- Google Calendar (para verlo en el iPhone) ----------
