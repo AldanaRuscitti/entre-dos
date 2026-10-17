@@ -446,5 +446,28 @@ async function plan({L, user, now, st, load}) {
   return {msgs, st:next};
 }
 
-module.exports = {NOTIF_DEF, DEF_TZ, HELP, toMin, localNow, notifOf, useUser, digest, weekly, budgetAlerts, timedToday, plan, fixedWhen, fixedForMe, choreButtons,
+// ---------- Inversiones: resumen mensual cuando el INDEC publica la inflación ----------
+// summary = data/users/{uid}/inv_summary (lo arma la app), ipcSeries = [{fecha:"2026-09-30", valor:1.9}]
+const pctTxt = x => (x >= 0 ? "+" : "−") + Math.abs(x * 100).toLocaleString("es-AR", {maximumFractionDigits:1, minimumFractionDigits:1}) + "%";
+const arsTxt = v => "$" + Math.round(Math.abs(v)).toLocaleString("es-AR");
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function invRecapMsg(summary, ipcSeries) {
+  if (!summary || !summary.months || !Array.isArray(ipcSeries) || !ipcSeries.length) return null;
+  const ipc = Object.fromEntries(ipcSeries.map(x => [String(x.fecha).slice(0, 7), Number(x.valor) / 100]));
+  const ym = Object.keys(ipc).sort().pop();
+  const m = summary.months[ym];
+  if (!m || m.partial || !m.ars || m.ars.r == null) return null;
+  const r = m.ars.r, inf = ipc[ym], pp = (r - inf) * 100, mes = MESES[Number(ym.slice(5)) - 1];
+  const verdict = pp > 0.5 ? `le ganaste por ${Math.abs(pp).toFixed(1).replace(".", ",")} puntos 🟢` : pp < -0.5 ? `te ganó por ${Math.abs(pp).toFixed(1).replace(".", ",")} puntos 🔴` : "quedaste prácticamente igual 🟡";
+  const lines = [`${m.ars.g >= 0 ? "Ganaste" : "Perdiste"} ${arsTxt(m.ars.g)} (${pctTxt(r)}). La inflación fue ${pctTxt(inf).replace("+", "")}, así que ${verdict}.`];
+  if (m.usd && m.usd.r != null) lines.push(`En dólares: ${m.usd.g >= 0 ? "+" : "−"}US$ ${Math.abs(Math.round(m.usd.g)).toLocaleString("es-AR")} (${pctTxt(m.usd.r)}).`);
+  // en lo que va del año
+  const y = ym.slice(0, 4); let R = 1, I = 1, n = 0;
+  for (const [k, v] of Object.entries(summary.months)) if (k.startsWith(y) && k <= ym && !v.partial && v.ars && v.ars.r != null && ipc[k] != null) { R *= 1 + v.ars.r; I *= 1 + ipc[k]; n++; }
+  if (n > 1) lines.push(`En el año vas ${pctTxt(R - 1)} contra ${pctTxt(I - 1).replace("+", "")} de inflación${R > I ? " 🟢" : ""}.`);
+  if (pp < -0.5 && n > 1 && R > I) lines.push("Un mes flojo pasa: lo importante es cómo va en varios meses.");
+  return {ym, msg:{title:`📈 Tus inversiones en ${mes}`, body:lines.join("\n"), tag:"inv-" + ym}};
+}
+
+module.exports = {invRecapMsg, NOTIF_DEF, DEF_TZ, HELP, toMin, localNow, notifOf, useUser, digest, weekly, budgetAlerts, timedToday, plan, fixedWhen, fixedForMe, choreButtons,
   parseCommand, takeAmount, parseGasto, parseYo, parseCompra, shopList, faltaText, choreTap, tgMarkup, markDone, newId, moneyShort};

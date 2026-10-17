@@ -6,7 +6,7 @@ const {getFirestore} = require("firebase-admin/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 const {load} = require("./extract");
 const logic = require("./logic");
-const {plan, digest, weekly, localNow, DEF_TZ, HELP} = logic;
+const {plan, digest, weekly, localNow, DEF_TZ, HELP, invRecapMsg} = logic;
 const gcal = require("./gcal");
 
 const SA = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -254,14 +254,27 @@ async function main() {
   }
   await telegram(users, now);
   await calendar(users, now).catch(e => console.log(`::warning::Calendario de Google: ${e.message}`));
-  let total = 0;
+  let total = 0, ipcSeries = null;
   for (const user of users) {
     const ref = db.collection("notifState").doc(user.uid);
     const st = (await ref.get()).data() || {};
     const r = await plan({L, user, now, st, load:kind => withData(user, kind, now)});
+    // Inversiones: una revisión por día (entre las 10 y las 21) para mandar el resumen del mes cuando sale la inflación
+    const loc = localNow(now, user.settings?.tz);
+    if (r.st.invDay !== loc.day && loc.min >= 600 && loc.min <= 1260) {
+      r.st = {...r.st, invDay:loc.day};
+      try {
+        const sum = await userCol(user.uid).doc("inv_summary").get();
+        if (sum.exists) {
+          if (!ipcSeries) ipcSeries = await fetch("https://api.argentinadatos.com/v1/finanzas/indices/inflacion").then(x => x.ok ? x.json() : []).catch(() => []);
+          const rec = invRecapMsg(sum.data(), ipcSeries);
+          if (rec && st.invSent !== rec.ym) { r.msgs.push(rec.msg); r.st.invSent = rec.ym; }
+        }
+      } catch (e) { console.log("::warning::Inversiones: no se pudo armar el resumen"); }
+    }
     if (r.msgs.length) total += await deliver(user, r.msgs);
     if (JSON.stringify(r.st) !== JSON.stringify(st)) await ref.set(r.st);
   }
   console.log("Listo.");
 }
-main().catch(e => { console.error(e && e.stack || String(e)); console.log(`::error::${String(e && e.message || e).split("\n")[0].slice(0, 300)}`); process.exit(1); });
+main().catch(e => { console.log(`::error::${String(e && e.message || e).split("\n")[0].slice(0, 300)}`); process.exit(1); });

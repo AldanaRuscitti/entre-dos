@@ -4,8 +4,8 @@ importScripts(
   "https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js",
   "./firebase-config.js"
 );
-const CACHE = "entredos-v2";
-const SHELL = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest", "./icons/icon-192.png"];
+const CACHE = "entredos-v3";
+const SHELL = ["./", "./index.html", "./firebase-config.js", "./inversiones-calc.js", "./manifest.webmanifest", "./icons/icon-192.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

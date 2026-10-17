@@ -17,6 +17,7 @@
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="inversiones-calc.js"></script>
 </head>
 <body>
 <title>Entre Dos</title>
@@ -363,6 +364,14 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .menu-day.today{color:var(--accent)}
 .meal{min-height:44px;border:1.5px dashed var(--line);background:transparent;border-radius:12px;padding:6px 8px;font:inherit;font-size:13px;color:var(--ink);text-align:left;cursor:pointer;overflow-wrap:anywhere}
 .meal.has{border-style:solid;background:var(--surface2);font-weight:600}
+.inv-verdict{border-left:5px solid var(--muted)}
+.inv-verdict.pos{border-left-color:var(--pos)}.inv-verdict.neg{border-left-color:var(--neg)}.inv-verdict.mut{border-left-color:#C99A1A}
+.inv-chart{display:flex;gap:4px;align-items:stretch;height:150px}
+.inv-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:4px;background:none;border:0;padding:0;cursor:pointer;color:inherit;font:inherit}
+.inv-area{position:relative;flex:1;border-radius:6px;background:var(--surface2)}
+.inv-area i{position:absolute;left:18%;right:18%;border-radius:4px}
+.inv-area b{position:absolute;left:4%;right:4%;height:0;border-top:2px dashed var(--ink)}
+.inv-col small{font-size:10px;color:var(--muted);text-align:center;text-transform:capitalize}
 .qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .qa.qa-top{grid-template-columns:repeat(3,minmax(0,1fr))}
 .qa.qa-top button{padding-block:16px}
@@ -552,7 +561,7 @@ const DEF_PREFS = {weekStart:1, cur:"ARS", budgets:{}};
 const S = {
   ready:false, local:false, readOnly:false, uid:null,
   people:{}, groups:{}, events:{}, expenses:{}, config:{}, lists:{}, items:{}, fixed:{}, goals:{}, contribs:{}, chores:{}, choreLog:{}, dues:{}, polls:{}, thanks:{}, pets:{}, meals:{}, ideas:{}, checkins:{},
-  priv:{events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, settings:null},
+  priv:{events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, inv:{}, settings:null},
   listId: store.get("listId", null), cTab: store.get("cTab", "mov"), hTab: (() => { const h = store.get("hTab", "tareas"); if (h === "fechas" || h === "mascotas") { store.set("hTab", "tareas"); return "tareas"; } return h; })(), choreMine: false, cMonth: ymd(new Date()).slice(0, 7), drafts:{},
   view: (v => v === "listas" ? "hogar" : v)(store.get("view", "inicio")),
   calMonth: ymd(new Date()).slice(0, 7),
@@ -677,6 +686,7 @@ const SANP = {
   event:SAN.events,
   tx:d => CURS.includes(d.cur) && dt(d.date) ? {...d, type:d.type === "ingreso" ? "ingreso" : "gasto", amount:num(d.amount), desc:str(d.desc, 80)} : null,
   tpl:d => CURS.includes(d.cur) ? {...d, type:d.type === "ingreso" ? "ingreso" : "gasto", amount:num(d.amount), day:Math.min(31, Math.max(1, num(d.day, 1) | 0))} : null,
+  inv:d => d && typeof d === "object" ? d : null,
   goal:SAN.goals, gcontrib:SAN.contribs, due:d => SAN.dues(d), push:d => typeof d.token === "string" ? d : null, gift:d => ({...d, idea:str(d.idea, 300), history:Array.isArray(d.history) ? d.history.slice(-20).filter(h => h && typeof h === "object").map(h => ({year:num(h.year) | 0, text:str(h.text, 120)})) : []}), settings:d => ({...d, wallets:Array.isArray(d.wallets) ? d.wallets.filter(w => w && typeof w.id === "string").map(w => ({id:w.id.slice(0, 20), name:str(w.name, 30) || "Cuenta", cur:CURS.includes(w.cur) ? w.cur : "ARS", start:num(w.start)})) : [], cards:Array.isArray(d.cards) ? d.cards.filter(c => c && typeof c.id === "string").map(c => ({id:c.id.slice(0, 20), name:str(c.name, 30) || "Tarjeta", close:Math.min(31, Math.max(1, num(c.close, 25) | 0)), due:num(c.due) >= 1 && num(c.due) <= 31 ? num(c.due) | 0 : null})) : []})
 };
 function ingest(fn, d) {
@@ -790,6 +800,277 @@ function downloadFile(f) {
   a.download = f.filename; document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
 }
 
+/* ---------- inversiones (IOL) ----------
+   Entre Dos · Inversiones (IOL). Usa el motor de inversiones-calc.js y funciones de la app (esc, money, put, openSheet…).
+   Seguridad:
+   - La contraseña de IOL se usa una sola vez para pedir el permiso (token) y NO se guarda en ningún lado.
+   - El permiso queda solo en este dispositivo (localStorage). Nunca se sube a la base de datos ni a GitHub.
+   - Solo se usan funciones de LECTURA de IOL (cartera, operaciones, cotizaciones). Esta app no compra, vende ni rescata. */
+const IOL_API = "https://api.invertironline.com";
+const AD_API = "https://api.argentinadatos.com/v1";
+const INVS = {syncing:false, err:"", cur:"ARS", per:"mes", res:null, resKey:"", market:null, progress:""};
+try { const v = JSON.parse(localStorage.getItem("entredos.inv.view") || "{}"); if (v.cur) INVS.cur = v.cur; if (v.per) INVS.per = v.per; } catch {}
+const invSaveView = () => { try { localStorage.setItem("entredos.inv.view", JSON.stringify({cur:INVS.cur, per:INVS.per})); } catch {} };
+
+// ---------- sesión de IOL (solo en este dispositivo) ----------
+const iolKey = () => "entredos.iol." + (S.uid || "x");
+const iolSess = () => { try { return JSON.parse(localStorage.getItem(iolKey()) || "null"); } catch { return null; } };
+const iolSave = s => { try { s ? localStorage.setItem(iolKey(), JSON.stringify(s)) : localStorage.removeItem(iolKey()); } catch {} };
+async function iolToken(params) {
+  let r;
+  try { r = await fetch(IOL_API + "/token", {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:new URLSearchParams(params)}); }
+  catch { throw new Error("No pudimos hablar con IOL. Revisá tu conexión."); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) { const e = new Error(r.status === 400 || r.status === 401 ? "IOL no aceptó el usuario o la contraseña." : "IOL no respondió bien (" + r.status + ")."); e.status = r.status; throw e; }
+  return j;
+}
+async function iolLogin(username, password) {
+  const j = await iolToken({username, password, grant_type:"password"});
+  iolSave({user:username, access:j.access_token, refresh:j.refresh_token, exp:Date.now() + ((Number(j.expires_in) || 900) - 60) * 1000});
+}
+async function iolAccess(forceRefresh) {
+  const s = iolSess(); if (!s) throw Object.assign(new Error("Conectá tu cuenta de IOL."), {code:"nosession"});
+  if (!forceRefresh && s.access && Date.now() < s.exp) return s.access;
+  try { const j = await iolToken({refresh_token:s.refresh, grant_type:"refresh_token"});
+    iolSave({...s, access:j.access_token, refresh:j.refresh_token || s.refresh, exp:Date.now() + ((Number(j.expires_in) || 900) - 60) * 1000}); return j.access_token; }
+  catch (e) { if (e.status === 400 || e.status === 401) { iolSave(null); throw Object.assign(new Error("IOL pidió que vuelvas a entrar. Tus datos siguen acá."), {code:"expired"}); } throw e; }
+}
+// Solo lectura: GET y nada más.
+async function iolGet(path, retried) {
+  const tk = await iolAccess(retried);
+  let r; try { r = await fetch(IOL_API + path, {headers:{Authorization:"Bearer " + tk, Accept:"application/json"}}); } catch { throw new Error("No pudimos hablar con IOL. Revisá tu conexión."); }
+  if (r.status === 401 && !retried) return iolGet(path, true);
+  if (!r.ok) { const e = new Error("IOL respondió " + r.status); e.status = r.status; throw e; }
+  return r.json();
+}
+
+// ---------- datos públicos: dólar MEP e inflación (argentinadatos.com) ----------
+async function invMarket() {
+  const KEY = "entredos.inv.market";
+  if (INVS.market && Date.now() - INVS.market.at < 6 * 3600e3) return INVS.market;
+  try { const c = JSON.parse(localStorage.getItem(KEY) || "null"); if (c && Date.now() - c.at < 6 * 3600e3) return (INVS.market = c); } catch {}
+  const get = async u => { const r = await fetch(u); if (!r.ok) throw new Error("dato público no disponible"); return r.json(); };
+  const [mep, ipc] = await Promise.all([get(AD_API + "/cotizaciones/dolares/bolsa"), get(AD_API + "/finanzas/indices/inflacion")]);
+  const m = {at:Date.now(), mep:mep.filter(x => x.fecha >= "2017-01-01").map(x => ({fecha:x.fecha, venta:x.venta})), ipc:ipc.map(x => ({fecha:x.fecha, valor:x.valor}))};
+  try { localStorage.setItem(KEY, JSON.stringify(m)); } catch {}
+  return (INVS.market = m);
+}
+
+// ---------- sincronización ----------
+const invLedger = () => S.priv.inv?.inv_ledger || null;
+const MKT = {bcba:"bCBA", nyse:"nYSE", nasdaq:"nASDAQ", amex:"aMEX", bcs:"bCS", rofx:"rOFX"};
+const pow10 = x => { if (!(x > 0)) return 1; const k = Math.round(Math.log10(x)); return Math.abs(Math.log10(x) - k) < 0.15 ? Math.pow(10, k) : 1; };
+async function invSync() {
+  if (INVS.syncing || !iolSess()) return;
+  INVS.syncing = true; INVS.err = ""; INVS.progress = "Leyendo tu cartera…"; render();
+  try {
+    const today = todayS();
+    const old = invLedger() || {ops:{}, info:{}, px:{}};
+    const led = {ops:{...(old.ops || {})}, info:{...(old.info || {})}, px:JSON.parse(JSON.stringify(old.px || {}))};
+    const [pa, pu] = await Promise.all([iolGet("/api/v2/portafolio/argentina"), iolGet("/api/v2/portafolio/estados_Unidos").catch(() => ({activos:[]}))]);
+    const positions = [...(pa.activos || []), ...(pu.activos || [])].map(INV.normPos).filter(p => p.sym && p.qty > 0);
+    for (const p of positions) { led.info[p.sym] = {desc:p.desc, tipo:p.tipo, ccy:p.ccy, fci:p.fci, mercado:p.mercado}; (led.px[p.sym] ||= {})[today] = p.price; }
+    // operaciones nuevas (las ya guardadas no se vuelven a pedir)
+    INVS.progress = "Leyendo tus operaciones…"; render();
+    const lastOp = Object.values(led.ops).reduce((m, o) => o.date > m ? o.date : m, "");
+    const from = lastOp ? INV.shift(lastOp, -20) : "2000-01-01";
+    const lists = await Promise.all(["argentina", "estados_Unidos"].map(pais => iolGet(`/api/v2/operaciones?filtro.estado=terminadas&filtro.fechaDesde=${from}&filtro.fechaHasta=${today}&filtro.pais=${pais}`).catch(() => [])));
+    const items = lists.flat().filter(o => o && o.numero && !led.ops[o.numero] && !/caucion/i.test(o.tipo || ""));
+    let done = 0;
+    const work = items.slice();
+    const worker = async () => { while (work.length) { const o = work.shift();
+      let d = null; try { d = await iolGet("/api/v2/operaciones/" + o.numero); } catch {}
+      const n = INV.normOp(d ? {...o, ...d, simbolo:d.simbolo || o.simbolo} : o, led.info[String(o.simbolo || "").toUpperCase()]?.ccy);
+      if (n) led.ops[n.n || o.numero] = n;
+      done++; if (done % 5 === 0) { INVS.progress = `Leyendo tus operaciones… ${done}/${items.length}`; render(); } } };
+    await Promise.all([worker(), worker(), worker()]);
+    // precios históricos de acciones, CEDEARs y bonos (los FCI se completan con las suscripciones y las fotos diarias)
+    INVS.progress = "Buscando precios de cada mes…"; render();
+    const opsBySym = {}; for (const o of Object.values(led.ops)) (opsBySym[o.sym] ||= []).push(o);
+    for (const [sym, ops] of Object.entries(opsBySym)) {
+      const inf = led.info[sym] || {}; if (inf.fci || ops.some(o => o.fci)) continue;
+      const first = ops.reduce((m, o) => o.date < m ? o.date : m, today);
+      const have = Object.keys(led.px[sym] || {}).filter(d => d < today).sort();
+      const start = have.length ? have[have.length - 1] : first; if (INV.shift(start, 25) > today && have.length) continue;
+      const mkt = MKT[String(inf.mercado || "").toLowerCase()] || (ops[0].ccy === "USD" && !inf.mercado ? "nYSE" : "bCBA");
+      let serie = []; try { serie = await iolGet(`/api/v2/${mkt}/Titulos/${encodeURIComponent(sym)}/Cotizacion/seriehistorica/${start}/${today}/sinAjustar`); } catch {}
+      if (!Array.isArray(serie) || !serie.length) continue;
+      const byMonth = {}; for (const x of serie) { const d = String(x.fechaHora || "").slice(0, 10); if (d && Number(x.ultimoPrecio) > 0 && (!byMonth[d.slice(0, 7)] || d > byMonth[d.slice(0, 7)][0])) byMonth[d.slice(0, 7)] = [d, Number(x.ultimoPrecio)]; }
+      // la serie puede cotizar "cada 100": la llevamos a precio por unidad comparando con una operación
+      const ref = ops.find(o => o.price > 0); const refSerie = ref ? serie.find(x => String(x.fechaHora || "").slice(0, 10) === ref.date) : null;
+      const scale = refSerie ? pow10(ref.price / Number(refSerie.ultimoPrecio)) : led.px[sym]?.[today] ? pow10(led.px[sym][today] / Number(serie[serie.length - 1].ultimoPrecio)) : 1;
+      for (const [d, v] of Object.values(byMonth)) (led.px[sym] ||= {})[d] = v * scale;
+    }
+    // podamos fotos viejas: dejamos el último dato de cada mes + los últimos 40 días
+    for (const sym of Object.keys(led.px)) { const ds = Object.keys(led.px[sym]).sort(), keep = new Set(); const lastOfM = {};
+      for (const d of ds) lastOfM[d.slice(0, 7)] = d; Object.values(lastOfM).forEach(d => keep.add(d)); ds.filter(d => d >= INV.shift(today, -40)).forEach(d => keep.add(d));
+      for (const d of ds) if (!keep.has(d)) delete led.px[sym][d]; }
+    led.positions = positions.map(p => ({sym:p.sym, qty:p.qty, price:p.price}));
+    INVS.progress = "Calculando…"; render();
+    await put(privPath("inv_ledger"), {...led, id:"inv_ledger", kind:"inv", syncedAt:Date.now(), user:iolSess()?.user || ""});
+    S.priv.inv = {...(S.priv.inv || {}), inv_ledger:{...led, id:"inv_ledger", kind:"inv", syncedAt:Date.now()}};
+    const res = await invCompute(true);
+    if (res && !res.empty) await invSaveSummary(res);
+    try { localStorage.setItem("entredos.inv.lastSync." + S.uid, String(Date.now())); } catch {}
+  } catch (e) {
+    INVS.err = e.code === "expired" ? e.message : (e.message || "Algo falló al leer IOL.");
+  } finally { INVS.syncing = false; INVS.progress = ""; render(); }
+}
+async function invCompute(force) {
+  const led = invLedger(); if (!led) return null;
+  let mk; try { mk = await invMarket(); } catch { INVS.err = "No pudimos traer la inflación y el dólar MEP. Probá de nuevo en un rato."; return null; }
+  const key = `${led.syncedAt}|${mk.at}|${todayS()}`;
+  if (!force && INVS.resKey === key && INVS.res) return INVS.res;
+  const positions = (led.positions || []).map(p => ({...p, ...(led.info?.[p.sym] || {}), sym:p.sym}));
+  INVS.res = INV.compute({ops:Object.values(led.ops || {}), positions, px:led.px || {}, info:led.info || {}, mep:mk.mep, ipc:mk.ipc, today:todayS()});
+  INVS.resKey = key;
+  return INVS.res;
+}
+// Resumen chico para Inicio y para el aviso mensual por Telegram (sin detalle de cada operación)
+async function invSaveSummary(res) {
+  const months = {};
+  for (const m of res.months.slice(-24)) months[m.ym] = {ars:m.ARS ? {g:Math.round(m.ARS.gain), r:m.ARS.r} : null, usd:m.USD ? {g:Math.round(m.USD.gain * 100) / 100, r:m.USD.r} : null, partial:!!m.partial};
+  await put(privPath("inv_summary"), {id:"inv_summary", kind:"inv", at:Date.now(), months,
+    total:{ars:Math.round(res.total.valueARS), usd:Math.round(res.total.valueUSD), realGainARS:Math.round(res.total.realGainARS)}});
+}
+
+// ---------- pantalla ----------
+const fmtPct = (x, d = 1) => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x * 100).toLocaleString("es-AR", {maximumFractionDigits:d, minimumFractionDigits:d}) + "%";
+const fmtPP = x => x == null ? "—" : Math.abs(x).toLocaleString("es-AR", {maximumFractionDigits:1, minimumFractionDigits:1});
+const fmtM = (v, cur) => { const usd = cur === "USD", a = Math.abs(v), r = usd && a < 100 ? Math.round(a * 100) / 100 : Math.round(a); return (v < 0 ? "−" : "") + money(r, usd ? "USD" : "ARS").replace(/,00$/, ""); };
+const ymName = ym => MONTHS[Number(ym.slice(5)) - 1];
+const VERD = {win:["🟢", "Le ganaste a la inflación", "pos"], tie:["🟡", "Empataste con la inflación", "mut"], lose:["🔴", "Te ganó la inflación", "neg"], up:["🟢", "Ganaste en dólares", "pos"], down:["🔴", "Perdiste en dólares", "neg"], flat:["🟡", "Quedaste igual en dólares", "mut"]};
+function invPeriodRange(months) {
+  const cur = todayS().slice(0, 7), lastFull = months.filter(m => !m.partial).slice(-1)[0]?.ym || cur;
+  return {mes:[lastFull, lastFull], "3m":[INV.ymAdd(lastFull, -2), lastFull], anio:[cur.slice(0, 4) + "-01", cur], todo:["0000-00", cur]}[INVS.per] || [lastFull, lastFull];
+}
+
+function invView() {
+  const sess = iolSess(), led = invLedger();
+  if (!sess && !led) return invConnectCard();
+  if (led && !INVS.res && !INVS.syncing) invCompute().then(r => { if (r) render(); });
+  const lastSync = Number((() => { try { return localStorage.getItem("entredos.inv.lastSync." + S.uid); } catch { return 0; } })()) || led?.syncedAt || 0;
+  if (sess && !INVS.syncing && Date.now() - lastSync > 6 * 3600e3 && !INVS.autoTried) { INVS.autoTried = true; setTimeout(invSync, 50); }
+  const head = `<div class="row" style="margin-bottom:12px;gap:8px">
+      <span class="small muted" style="flex:1">${INVS.syncing ? esc(INVS.progress || "Actualizando…") : lastSync ? `Actualizado ${esc(invAgo(lastSync))} · IOL` : ""}</span>
+      ${sess ? `<button class="btn sm" data-act="invSync" ${INVS.syncing ? "disabled" : ""}>↻ Actualizar</button>` : `<button class="btn sm primary" data-act="invConnect">Volver a conectar</button>`}
+      <button class="icon-btn" data-act="invMenu" aria-label="Opciones de inversiones">⋯</button></div>
+    ${INVS.err ? `<p class="hint-warn small" style="margin:0 0 12px">${esc(INVS.err)}</p>` : ""}`;
+  const res = INVS.res;
+  if (!res) return head + `<section class="card"><div class="empty"><b>${INVS.syncing ? "Leyendo tu cuenta de IOL…" : "Preparando tus números…"}</b>La primera vez puede tardar un minuto.</div></section>`;
+  if (res.empty) return head + `<section class="card"><div class="empty"><b>No encontramos inversiones</b>Cuando tengas compras o suscripciones en IOL, aparecen acá.</div></section>`;
+  const cur = INVS.cur, [a, b] = invPeriodRange(res.months), P = INV.period(res.months, a, b, cur);
+  const perLabel = {mes:`En ${ymName(b)}`, "3m":"En los últimos 3 meses", anio:"En lo que va del año", todo:"Desde que empezaste"}[INVS.per];
+  const chips = `<div class="row" style="margin-bottom:8px"><span class="small muted" style="flex:1">Ver en</span><span class="seg" role="group" aria-label="Moneda"><label><input type="radio" name="invcur" value="ARS" data-chg="invCur" ${cur === "ARS" ? "checked" : ""}><span>Pesos</span></label><label><input type="radio" name="invcur" value="USD" data-chg="invCur" ${cur === "USD" ? "checked" : ""}><span>Dólares</span></label></span></div>
+    <div class="filters" style="margin-bottom:10px">${[["mes","Último mes"],["3m","3 meses"],["anio","Este año"],["todo","Desde el inicio"]].map(([k, l]) => `<button class="chip" data-act="invPer" data-k="${k}" aria-pressed="${INVS.per === k}">${l}</button>`).join("")}</div>`;
+  return head + chips + invVerdict(P, perLabel, res) + invChart(res) + invHoldings(res) +
+    `<p class="small muted" style="margin:14px 2px 0">Esto es para que entiendas cómo te fue, no un consejo de inversión. Los números pueden diferir un poco de IOL por redondeos y cotizaciones. No incluye la plata sin invertir ni dividendos o rentas cobrados. Dólar: MEP. Inflación: INDEC.</p>`;
+}
+function invAgo(t) { const m = Math.round((Date.now() - t) / 6e4); return m < 2 ? "recién" : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} días`; }
+function invVerdict(P, perLabel, res) {
+  const cur = INVS.cur, tot = res.total;
+  const now = `<div class="small muted" style="margin-top:10px">Tenés invertido hoy: <b class="money">${esc(fmtM(tot.valueARS, "ARS"))}</b> · <b class="money">${esc(fmtM(tot.valueUSD, "USD"))}</b></div>`;
+  if (!P) return `<section class="card" style="margin-bottom:14px"><p style="margin:0">Todavía no hay un mes completo para comparar.</p>${now}</section>`;
+  const v = VERD[P.verdict] || ["", "", "mut"];
+  const gainTxt = P.gain >= 0 ? `ganaste <b class="money">${esc(fmtM(P.gain, cur))}</b>` : `perdiste <b class="money">${esc(fmtM(-P.gain, cur))}</b>`;
+  let line2 = "";
+  if (cur === "ARS") line2 = P.ipc == null ? `La inflación de ese período todavía no salió.` : `La inflación fue ${esc(fmtPct(P.ipc).replace("+", ""))}${P.ipcEst ? " (estimada: el INDEC todavía no publicó el último mes)" : ""}: ${P.verdict === "win" ? `le ganaste por <b>${esc(fmtPP(P.pp))} puntos</b>` : P.verdict === "lose" ? `te ganó por <b>${esc(fmtPP(P.pp))} puntos</b>` : "quedaste prácticamente igual"}.`;
+  else { const ars = INV.period(res.months, P.from, P.to, "ARS"); line2 = `Medido en dólares MEP${ars && ars.r != null && P.r != null && P.r < ars.r ? ": el dólar subió y se comió parte de lo que ganaste en pesos" : ""}.`; }
+  const usdLine = cur === "ARS" ? (() => { const u = INV.period(res.months, P.from, P.to, "USD"); return u ? `<div class="small" style="margin-top:6px">En dólares: <b class="money">${esc(u.gain >= 0 ? "+" : "")}${esc(fmtM(u.gain, "USD"))}</b> (${esc(fmtPct(u.r))})</div>` : ""; })() : "";
+  return `<section class="card inv-verdict ${v[2]}" style="margin-bottom:14px">
+    <div class="row" style="gap:8px"><span style="font-size:22px">${v[0]}</span><b style="font-size:18px">${esc(v[1])}</b><button class="icon-btn spacer" data-act="invHow" aria-label="Cómo lo calculamos">ⓘ</button></div>
+    <p style="margin:8px 0 0;font-size:17px">${esc(perLabel)} ${gainTxt}${P.r != null ? ` (${esc(fmtPct(P.r))})` : ""}.</p>
+    <p class="small" style="margin:6px 0 0">${line2}</p>${usdLine}${now}
+    ${cur === "ARS" && INVS.per === "todo" ? `<div class="small" style="margin-top:6px">Descontando la inflación, desde que empezaste ${tot.realGainARS >= 0 ? "ganaste" : "perdiste"} <b class="money">${esc(fmtM(Math.abs(tot.realGainARS), "ARS"))}</b> en pesos de hoy.</div>` : ""}</section>`;
+}
+function invChart(res) {
+  const cur = INVS.cur, ms = res.months.filter(m => m[cur] && m[cur].r != null).slice(-12);
+  if (ms.length < 2) return "";
+  const vals = ms.map(m => m[cur].r * 100), infl = ms.map(m => cur === "ARS" && m.ipc != null ? m.ipc * 100 : null);
+  const mx = Math.max(1, ...vals.map(Math.abs), ...infl.filter(x => x != null).map(Math.abs)), neg = vals.some(v => v < 0);
+  // alturas en % del área: si hay meses negativos, el cero queda al medio
+  const zero = neg ? 50 : 0, sc = (neg ? 46 : 92) / mx;
+  const cols = ms.map((m, i) => { const v = vals[i], inf = infl[i], h = Math.max(1.5, Math.abs(v) * sc);
+    const col = cur === "ARS" ? (inf == null ? "var(--muted)" : v - inf > 0.5 ? "var(--pos)" : v - inf < -0.5 ? "var(--neg)" : "#C99A1A") : v >= 0 ? "var(--pos)" : "var(--neg)";
+    return `<button class="inv-col" data-act="invMonth" data-ym="${m.ym}" aria-label="${esc(ymName(m.ym))}: ${esc(fmtPct(v / 100))}${inf != null ? ", inflación " + esc(fmtPct(inf / 100)) : ""}">
+      <span class="inv-area"><i style="background:${col};height:${h}%;${v >= 0 ? `bottom:${zero}%` : `top:${100 - zero}%`};opacity:${m.partial ? 0.5 : 1}"></i>${inf != null ? `<b style="bottom:${zero + inf * sc}%"></b>` : ""}</span>
+      <small>${esc(MON_S[Number(m.ym.slice(5)) - 1])}</small></button>`; }).join("");
+  return `<section class="card" style="margin-bottom:14px"><div class="card-h"><span class="ic">${UI.chart}</span><h2>Mes a mes</h2></div>
+    <div class="inv-chart">${cols}</div>
+    <p class="small muted" style="margin:8px 0 0">${cur === "ARS" ? "Cada barra es cuánto creció tu plata ese mes. La raya es la inflación: 🟢 la barra la pasa, le ganaste; 🔴 no llega, te ganó." : "Cuánto creció tu plata cada mes, medida en dólares MEP."} Tocá un mes para ver el detalle.</p></section>`;
+}
+function invHoldings(res) {
+  const cur = INVS.cur, hs = res.holdings.filter(h => h.open);
+  const groups = [["FCI en pesos", h => h.fci && h.ccy === "ARS"], ["FCI en dólares", h => h.fci && h.ccy === "USD"], ["Acciones, CEDEARs y bonos", h => !h.fci]];
+  const card = h => { const g = cur === "ARS" ? h.gainARS : h.gainUSD, val = cur === "ARS" ? h.valueARS : h.valueUSD, inv = val - g, beat = h.realGainARS > 0;
+    return `<div class="item click" data-act="invHolding" data-sym="${esc(h.sym)}"><div class="grow"><div class="t">${esc(h.desc)}</div>
+      <div class="s">${h.buys.length ? `Pusiste ${esc(fmtM(inv, cur))}${h.buys.length > 1 ? ` en ${h.buys.length} veces` : ""}, hoy vale <b class="money">${esc(fmtM(val, cur))}</b>` : `Hoy vale <b class="money">${esc(fmtM(val, cur))}</b>`}</div>
+      <div style="margin-top:4px"><span class="badge ${g >= 0 ? "pos" : "neg"}">${g >= 0 ? "Ganaste" : "Perdiste"} ${esc(fmtM(Math.abs(g), cur))}</span> ${cur === "ARS" ? `<span class="badge ${beat ? "pos" : "warn"}">${beat ? "🟢 le gana a la inflación" : "🔴 la inflación le gana"}</span>` : ""}${h.partialHistory ? ' <span class="badge mut">historial incompleto</span>' : ""}</div></div><span class="muted">›</span></div>`; };
+  return groups.map(([t, f]) => { const xs = hs.filter(f); return xs.length ? `<section class="card" style="margin-bottom:14px"><div class="card-h"><h2>${t}</h2></div><div class="list">${xs.map(card).join("")}</div></section>` : ""; }).join("");
+}
+function invHoldingSheet(sym) {
+  const h = INVS.res?.holdings.find(x => x.sym === sym); if (!h) return;
+  const rows = h.buys.map(b => `<div class="item"><div class="grow"><div class="t">${esc(shortDate(b.date))} ${b.date.slice(0, 4) !== todayS().slice(0, 4) ? b.date.slice(0, 4) : ""} · pusiste ${esc(fmtM(b.amount, b.ccy))}</div>
+    <div class="s">Esta compra rindió <b>${esc(fmtPct(b.ret))}</b>${h.ccy === "ARS" && b.ret != null ? ` · inflación desde entonces ${esc(fmtPct(b.infl).replace("+", ""))} ${b.ret > b.infl ? "🟢" : "🔴"}` : ""}${b.usdRet != null ? ` · en dólares ${esc(fmtPct(b.usdRet))}` : ""}</div></div></div>`).join("");
+  showDoc(h.desc, `<p style="margin:0">Hoy vale <b>${esc(fmtM(h.valueARS, "ARS"))}</b> (${esc(fmtM(h.valueUSD, "USD"))}).</p>
+    <p style="margin:6px 0 0">Ganancia: <b>${esc(fmtM(h.gainARS, "ARS"))}</b> · descontando inflación: <b>${esc(fmtM(h.realGainARS, "ARS"))}</b> · en dólares: <b>${esc(fmtM(h.gainUSD, "USD"))}</b>.</p>
+    ${rows ? `<div class="month-h" style="margin-top:12px">Cada compra</div><div class="list">${rows}</div><p class="small muted">Por eso el total no es un promedio simple: cada compra arrancó en un momento distinto.</p>` : ""}
+    ${h.sells.length ? `<div class="month-h">Retiros</div><div class="list">${h.sells.map(s2 => `<div class="item"><div class="grow small">${esc(shortDate(s2.date))} · sacaste ${esc(fmtM(s2.amount, s2.ccy))}</div></div>`).join("")}</div>` : ""}
+    ${h.partialHistory ? `<p class="small hint-warn">IOL no nos dio todas las operaciones de esta inversión (por ejemplo, si vino de otra cuenta). La ganancia puede no ser exacta.</p>` : ""}`);
+}
+function invMonthSheet(ym) {
+  const m = INVS.res?.months.find(x => x.ym === ym); if (!m) return;
+  const A = m.ARS, U = m.USD;
+  showDoc(`${ymName(ym)} ${ym.slice(0, 4)}`, `${A ? `<p style="margin:0">Arrancaste el mes con <b>${esc(fmtM(A.vs, "ARS"))}</b>${A.flows ? `, ${A.flows > 0 ? "pusiste" : "sacaste"} <b>${esc(fmtM(Math.abs(A.flows), "ARS"))}</b>` : ""} y terminaste con <b>${esc(fmtM(A.ve, "ARS"))}</b>.</p>
+    <p style="margin:8px 0 0">Ganancia del mes: <b>${esc(fmtM(A.gain, "ARS"))}</b> (${esc(fmtPct(A.r))}).</p>` : ""}
+    ${m.ipc != null && A?.r != null ? `<p style="margin:6px 0 0">Inflación${m.ipcEst ? " estimada" : ""}: ${esc(fmtPct(m.ipc).replace("+", ""))} → ${A.r - m.ipc > 0.005 ? `🟢 le ganaste por ${esc(fmtPP((A.r - m.ipc) * 100))} puntos` : A.r - m.ipc < -0.005 ? `🔴 te ganó por ${esc(fmtPP((A.r - m.ipc) * 100))} puntos` : "🟡 empataste"}.</p>` : ""}
+    ${U ? `<p style="margin:6px 0 0">En dólares: ${esc(fmtM(U.gain, "USD"))} (${esc(fmtPct(U.r))}).</p>` : ""}
+    ${m.partial ? `<p class="small muted">El mes todavía no terminó.</p>` : ""}`);
+}
+function invConnectCard() {
+  return `<section class="card" style="max-width:620px"><div class="card-h"><span class="ic">${UI.chart}</span><h2>¿Le ganás a la inflación?</h2></div>
+    <p style="margin:0 0 10px">Conectá tu cuenta de IOL y te mostramos, mes a mes, cuánto ganaste en pesos y en dólares, y si le ganaste a la inflación. Aunque hayas comprado el mismo fondo varias veces.</p>
+    <ul class="small" style="margin:0 0 12px;padding-left:18px"><li>Tu contraseña se usa una sola vez para conectar y <b>no se guarda</b>.</li><li>El permiso queda <b>solo en este celu</b>. Si cambiás de celu, conectás de nuevo.</li><li>Solo leemos: esta app <b>no compra, no vende ni saca plata</b>.</li><li>Lo ves solo vos (tu pareja no).</li></ul>
+    <button class="btn primary" data-act="invConnect">Conectar IOL</button></section>`;
+}
+function invConnectSheet() {
+  openSheet("Conectar IOL", `<label class="field"><span>Usuario de IOL</span><input class="input" name="user" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(iolSess()?.user || invLedger()?.user || "")}"></label>
+    <label class="field"><span>Contraseña de IOL</span><input class="input" type="password" name="pass" autocomplete="current-password"></label>
+    <p class="small muted" style="margin:0">Se manda directo a IOL para pedir un permiso de lectura y no se guarda. Los resultados (no la contraseña) se guardan en tu espacio privado de Entre Dos; quien administra la app podría verlos técnicamente.</p>
+    <label class="row small"><input type="checkbox" name="ok" required> Entiendo que es informativo, no un consejo de inversión.</label>
+    <div class="form-actions"><button class="btn primary" type="submit">Conectar</button></div>`, async (fd, f) => {
+    const user = (fd.get("user") || "").trim(), pass = fd.get("pass") || "";
+    if (!user || !pass) return formErr("Completá usuario y contraseña.");
+    if (fd.get("ok") !== "on") return formErr("Tildá que entendés que es informativo.");
+    const btn = f.querySelector('button[type="submit"]'); btn.disabled = true; btn.textContent = "Conectando…";
+    try { await iolLogin(user, pass); f.elements["pass"].value = ""; closeSheet(); toast("¡Conectado! Leyendo tu cuenta…"); INVS.err = ""; invSync(); }
+    catch (e) { btn.disabled = false; btn.textContent = "Conectar"; formErr(e.message + (e.status === 400 || e.status === 401 ? " Si los datos están bien, puede que tu cuenta no tenga la API habilitada: pedila desde IOL → Mi cuenta → consultas (motivo \"Api\")." : "")); }
+  });
+}
+function invMenuSheet() {
+  showDoc("Inversiones", `<div class="grid" style="gap:8px">
+    ${iolSess() ? `<button class="btn" data-act="invLogout" style="justify-content:flex-start">Desconectar IOL de este celu (tus números quedan)</button>` : ""}
+    <button class="btn danger" data-act="armDo" data-do="invWipe" style="justify-content:flex-start">Desconectar y borrar todos mis datos de inversiones</button></div>`);
+}
+const INV_HOW = `<p><b>Cuánto ganaste</b> = lo que vale al final − lo que valía al principio − lo que pusiste en el medio. Así lo que agregaste no cuenta como ganancia.</p>
+  <p><b>El porcentaje</b> tiene en cuenta cuántos días estuvo invertida cada parte de tu plata (si pusiste a fin de mes, cuenta poco).</p>
+  <p><b>Contra la inflación</b>: comparamos tu porcentaje con el IPC del INDEC de ese mes. Si el INDEC todavía no lo publicó, usamos el último y lo marcamos como estimado.</p>
+  <p><b>En dólares</b>: pasamos cada compra y cada valor al dólar MEP de ese día, que es el que podés comprar desde tu cuenta de inversión.</p>
+  <p class="small muted">No incluye plata sin invertir ni dividendos o rentas cobrados.</p>`;
+
+// Tarjeta chica para Inicio (solo la ve el dueño)
+function invHomeCard() {
+  const s = S.priv.inv?.inv_summary; if (!s || !s.months) return "";
+  if (!INVS.market && !INVS.mkTried) { INVS.mkTried = true; invMarket().then(() => render()).catch(() => {}); }
+  const yms = Object.keys(s.months).filter(k => !s.months[k].partial).sort(); const ym = yms[yms.length - 1]; if (!ym) return "";
+  const m = s.months[ym]; if (!m.ars) return "";
+  const ipc = (INVS.market?.ipc || []).find(x => String(x.fecha).slice(0, 7) === ym);
+  const pp = ipc && m.ars.r != null ? m.ars.r * 100 - Number(ipc.valor) : null;
+  const icon = pp == null ? "💰" : pp > 0.5 ? "🟢" : pp < -0.5 ? "🔴" : "🟡";
+  return `<section class="card click" data-act="go" data-v="inversiones" style="margin-bottom:16px;cursor:pointer"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">${icon}</span><div class="grow" style="min-width:0"><b>Tus inversiones en ${esc(ymName(ym))}</b>
+    <div class="small muted">${m.ars.g >= 0 ? "Ganaste" : "Perdiste"} <span class="money">${esc(fmtM(Math.abs(m.ars.g), "ARS"))}</span>${m.ars.r != null ? ` (${esc(fmtPct(m.ars.r))})` : ""}${pp != null ? (pp > 0.5 ? " · le ganaste a la inflación" : pp < -0.5 ? " · te ganó la inflación" : " · empataste con la inflación") : ""}</div></div><span class="muted">›</span></div></section>`;
+}
+
 /* ---------- persistence ---------- */
 let DB = null;
 const privPath = id => `data/users/${S.uid}/${id}`;
@@ -840,7 +1121,7 @@ async function boot() {
   const need = [...SHARED, "priv"];
   const mark = k => { loaded.add(k); if (!S.ready && need.every(n => loaded.has(n))) { S.ready = true; } schedule(); };
   S.err = {};
-  const SANMAP = {event:"events", tx:"tx", tpl:"tpl", goal:"goals", gcontrib:"gcontribs", due:"dues", gift:"gifts", push:"push"};
+  const SANMAP = {event:"events", tx:"tx", tpl:"tpl", goal:"goals", gcontrib:"gcontribs", due:"dues", gift:"gifts", push:"push", inv:"inv"};
   const onErr = c => e => {
     const k = e && e.code; S.err[c] = k || "error";
     if (k === "denied") S.fatal = "denied";
@@ -850,7 +1131,7 @@ async function boot() {
   };
   const sub = c => {
     if (c === "priv") return DB.collection("data/users/" + S.uid).onSnapshot(snap => {
-      const P = {events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, settings:null}, TP = {};
+      const P = {events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, inv:{}, settings:null}, TP = {};
       snap.docs.forEach(d => { const raw = ingest(null, d); if (!raw) return; const fn = SANP[raw.kind]; const v = fn ? fn(raw) : null; if (!v) return;
         if (raw.kind === "settings") P.settings = {...v, id:d.id}; else if (v.deletedAt) TP[d.id] = {...v, kind:raw.kind, id:d.id}; else if (SANMAP[raw.kind]) P[SANMAP[raw.kind]][d.id] = {...v, id:d.id}; });
       S.priv = P; S.trashP = TP; delete S.err.priv; bump("priv"); mark("priv");
@@ -1254,6 +1535,7 @@ V.inicio = () => {
     ${thanksCard(me.id)}
     ${closeCard()}${sinceCard(me.id)}
     ${todoHtml || `<section class="card" style="margin-bottom:16px"><div class="empty" style="padding:14px"><b>Todo al día</b>Están a mano y no hay nada pendiente.</div></section>`}
+    ${invHomeCard()}
     ${listHtml}
     ${weekHtml}`;
 };
@@ -1400,7 +1682,8 @@ V.finanzas = () => {
   if (cur === BASE) { const oth = usedCurs.filter(x => x !== BASE).map(x => ({x, v:monthItems(ym, x).filter(i => i.type === "gasto").reduce((s2, i) => s2 + i.amount, 0)})).filter(o => o.v > 0);
     if (oth.length) { const conv = oth.filter(o => fxRate(o.x)), miss = oth.filter(o => !fxRate(o.x)); const tot = r2(own + shared + conv.reduce((s2, o) => s2 + o.v * fxRate(o.x), 0));
       otherTxt = `<p class="small muted" style="margin:-6px 0 14px">${conv.length ? `Con lo gastado en ${conv.map(o => esc(money(o.v, o.x))).join(" y ")} (a la cotización guardada), en total gastaste <b class="money">${esc(money(tot, BASE))}</b>.` : ""}${miss.length ? ` También gastaste ${miss.map(o => esc(money(o.v, o.x))).join(" y ")}: <button class="linkbtn" data-act="go" data-v="cuentas">cargá la cotización</button> para sumarlo.` : ""}</p>`; } }
-  const seg = `<div class="seg" role="group" aria-label="Sección" style="margin-bottom:14px">${[["mes","Mes"],["analisis","Análisis"],["metas","Metas"]].map(([v, l]) => `<label><input type="radio" name="ftab" value="${v}" data-chg="fTab" ${tab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>`;
+  const seg = `<div class="seg" role="group" aria-label="Sección" style="margin-bottom:14px">${[["mes","Mes"],["analisis","Análisis"],["metas","Metas"],["inversiones","Inversiones"]].map(([v, l]) => `<label><input type="radio" name="ftab" value="${v}" data-chg="fTab" ${tab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>`;
+  if (tab === "inversiones") return `<div class="page-head"><h1>Mis finanzas</h1>${helpBtn("inversiones")}<span class="small muted">Solo vos ves esta sección.</span></div>${seg}${invView()}`;
   const body = tab === "analisis" ? `<div class="grid g2" style="align-items:start;margin-bottom:16px">
       <section class="card"><div class="card-h"><span class="ic">${UI.chart}</span><h2>Por categoría</h2><button class="btn sm spacer" data-act="budgets">Presupuestos</button></div>
         <div style="margin-top:8px">${catIds.length ? catIds.map(id => { const k = catOf(c.expCats, id); const v = byCat[id] || 0; const b = Number(budgets[cur + ":" + id] || 0);
@@ -2236,7 +2519,7 @@ function wipeSheet() {
     <div class="form-actions"><button class="btn danger" type="submit">Borrar para siempre</button><button class="btn" type="button" data-act="exportJson">Bajar copia primero</button></div>`, async fd => {
     if ((fd.get("ok") || "").trim().toUpperCase() !== "BORRAR") return formErr('Escribí BORRAR (en mayúsculas o minúsculas) para confirmar.', "ok");
     for (const ev of Object.values(S.priv.events)) if (ev.stubId) { try { await DB.doc("events/" + ev.stubId).delete(); } catch {} }
-    const ids = new Set([...Object.keys(S.priv.events), ...Object.keys(S.priv.tx), ...Object.keys(S.priv.tpl), ...Object.keys(S.priv.goals), ...Object.keys(S.priv.gcontribs), ...Object.keys(S.priv.dues || {}), ...Object.keys(S.priv.gifts || {}), ...Object.keys(S.priv.push || {}), ...Object.keys(S.trashP || {}), "settings"]);
+    const ids = new Set([...Object.keys(S.priv.events), ...Object.keys(S.priv.tx), ...Object.keys(S.priv.tpl), ...Object.keys(S.priv.goals), ...Object.keys(S.priv.gcontribs), ...Object.keys(S.priv.dues || {}), ...Object.keys(S.priv.gifts || {}), ...Object.keys(S.priv.push || {}), ...Object.keys(S.priv.inv || {}), ...Object.keys(S.trashP || {}), "settings"]);
     let n = 0; for (const id of ids) { try { await DB.doc(privPath(id)).delete(); n++; } catch {} if (n % 20 === 19) await new Promise(r => setTimeout(r, 300)); }
     S.wiped = true; closeSheet(); toast("Listo, borraste tus datos privados");
   });
@@ -2565,6 +2848,7 @@ const HELP = {
   tareas:`<p>Las tareas se repiten solas: cada tanto o en <b>ciertos días</b> (por ejemplo, martes y domingos, o una semana sí y otra no). Se pueden turnar, asignar a una persona o a cada día alguien distinto.</p><ul><li><b>Hecha ✓</b> la marca y programa la próxima. Si se pasó el día, con una vez alcanza para ponerse al día.</li><li><b>La tomo yo</b> si querés hacer la del otro.</li><li>En cada tarea: <b>pausar</b> (viajes), <b>saltear</b>, y <b>mover una fecha</b>. Te avisamos por Telegram o en el celu el día que te toca.</li></ul>`,
   listas:`<p>Listas compartidas para el súper, pendientes o lo que quieran. Tildá lo hecho y borrá los tachados de una vez.</p>`,
   fechas:`<p>Vencimientos (VTV, patente, seguro, monotributo…) y fechas especiales. Se ven en el calendario con ⏰, 🐾 o 🎉 y aparecen en Inicio cuando se acercan. Te avisamos el día del primer aviso que elijas, el día anterior y el mismo día. En los cumpleaños podés anotar <b>ideas de regalo</b> que solo ves vos.</p>`,
+  inversiones:`<p>Conectás tu cuenta de IOL y te mostramos, mes a mes, cuánto ganaste en pesos y en dólares MEP y si le ganaste a la inflación del INDEC.</p>${INV_HOW}<p>Tu contraseña no se guarda; el permiso queda solo en tu celu. Solo lo ves vos. Es informativo, no un consejo de inversión.</p>`,
   menu:`<p>Anoten qué van a comer cada día. Si cargan los ingredientes, con un toque los pasan a la lista de Compras (sin repetir lo que ya está).</p>`,
   decidir:`<p><b>¿Cómo estamos?</b>: tres preguntas por semana; las respuestas se ven cuando contestaron los dos.</p><p><b>Planes</b>: anoten ideas, sorteen una cuando no sepan qué hacer y guarden cómo estuvo.</p><p><b>Votaciones</b>: armen una votación (qué comer, qué ver, qué hacer). Cada uno dice sí o no y <b>solo se ven las coincidencias</b> cuando votaron todos.</p>`,
   mascotas:`<p>Una ficha por mascota con veterinario, alimento, medicación y peso. Sus vacunas y antiparasitarios se cargan como fechas y te avisan antes.</p>`
@@ -3174,7 +3458,7 @@ async function ensureGroup(pid, extra = []) {
 
 /* ---------- actions ---------- */
 const A = {
-  go: t => { S.view = t.dataset.v; if (S.view === "fechas" || S.view === "mascotas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir", "menu"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
+  go: t => { S.view = t.dataset.v; if (S.view === "inversiones") { S.view = "finanzas"; S.fTab = "inversiones"; store.set("fTab", "inversiones"); } if (S.view === "fechas" || S.view === "mascotas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir", "menu"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
   closeSheet,
   claim: t => { const p = S.people[t.dataset.id]; if (p) claimSheet(p); },
   saveFx: async t => { const cur = t.dataset.cur; const v = parseAmt(document.getElementById("fx-" + cur)?.value); if (!(v > 0)) return toast("Poné cuánto vale en pesos, por ejemplo 1200."); await saveCfg({fx:{...(cfg().fx || {}), [cur]:{rate:v, date:todayS()}}}); toast(`Cotización guardada: 1 ${cur} = ${money(v, BASE)}`); },
@@ -3266,6 +3550,7 @@ const CHG = {
   group: t => { if (t.value === "__new") { render(); return groupSheet(null); } if (t.value === "__edit") { const g = curGroup(); render(); return g && groupSheet(g); } S.groupId = t.value; store.set("groupId", S.groupId); render(); },
   qCat: t => { S.qCat = t.value; render(); },
   finCur: t => { S.finCur = t.value; render(); },
+  invCur: t => { INVS.cur = t.value; invSaveView(); render(); },
   fTab: t => { S.fTab = t.value; store.set("fTab", S.fTab); render(); },
   meName: async t => { const v = t.value.trim(); if (v) await patch("people/" + meId(), {name:v}); },
   meColor: async t => { if (HEX.test(t.value)) await patch("people/" + meId(), {color:t.value}); },
@@ -3278,6 +3563,7 @@ const CHG = {
 };
 
 const DO = {
+  invWipe: async () => { iolSave(null); for (const id of Object.keys(S.priv.inv || {})) await del(privPath(id)).catch(() => {}); INVS.res = null; INVS.resKey = ""; closeSheet(); toast("Listo: borramos tus datos de inversiones y desconectamos IOL."); render(); },
   delAccess: async t => { const em = t.dataset.id; if (em === S.email) return; await del("access/" + em); toast(`${em} ya no puede entrar`); },
   delWallet: async t => { await savePrefs({wallets:(prefs().wallets || []).filter(x => x.id !== t.dataset.id)}); closeSheet(); toast("Cuenta quitada"); },
   delCard: async t => { await savePrefs({cards:(prefs().cards || []).filter(x => x.id !== t.dataset.id)}); closeSheet(); toast("Tarjeta quitada"); },
@@ -3386,6 +3672,14 @@ Object.assign(A, {
     for (const x of add) { const id = newId(); await put("items/" + id, {id, list:L.id, text:x, done:false, by:meId(), createdAt:Date.now()}); }
     toast(add.length ? `${add.length} ingredientes sumados a ${L.name}` : `Ya estaban todos en ${L.name}`);
   },
+  invSync: () => invSync(),
+  invConnect: () => invConnectSheet(),
+  invMenu: () => invMenuSheet(),
+  invHow: () => showDoc("Cómo lo calculamos", `<div class="doc">${INV_HOW}</div>`),
+  invPer: t => { INVS.per = t.dataset.k; invSaveView(); render(); },
+  invMonth: t => invMonthSheet(t.dataset.ym),
+  invHolding: t => invHoldingSheet(t.dataset.sym),
+  invLogout: () => { iolSave(null); closeSheet(); toast("Desconectado de este celu. Tus números quedan."); render(); },
   choreMenu: t => { const c = S.chores[t.dataset.id]; if (c) choreMenuSheet(c); },
   choreDoneBy: async t => { const id = t.dataset.id, by = t.dataset.by; closeSheet(); await markChore(id, by); },
   choreTomorrow: async t => { const c = S.chores[t.dataset.id]; if (!c) return; const st = choreState(c), to = ymdShift(todayS(), 1); closeSheet();
