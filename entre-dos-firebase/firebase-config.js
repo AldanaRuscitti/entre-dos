@@ -17,3 +17,6 @@ self.VAPID_KEY = "BL7OOTYVqwmS-XX67JX0Fl1x3EDKittMqVQn3dbrqSTvd66zQ5iEU82f-A_Qnf
 
 // 3) Usuario de tu bot de Telegram, sin la @ (por ejemplo: EntreDosCasaBot)
 self.TELEGRAM_BOT = "EntreDosBot";
+
+// 4) Intermediario para IOL (Cloudflare Worker con el código de proxy/iol-worker.js). Ej: https://entre-dos-iol.tu-usuario.workers.dev
+self.IOL_PROXY = "TU_PROXY";

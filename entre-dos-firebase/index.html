@@ -806,7 +806,8 @@ function downloadFile(f) {
    - La contraseña de IOL se usa una sola vez para pedir el permiso (token) y NO se guarda en ningún lado.
    - El permiso queda solo en este dispositivo (localStorage). Nunca se sube a la base de datos ni a GitHub.
    - Solo se usan funciones de LECTURA de IOL (cartera, operaciones, cotizaciones). Esta app no compra, vende ni rescata. */
-const IOL_API = "https://api.invertironline.com";
+// IOL no deja leer sus respuestas desde otra página: pasamos por un intermediario propio (proxy/iol-worker.js) que solo permite leer.
+const IOL_API = self.IOL_PROXY && !/^TU_/.test(self.IOL_PROXY) ? String(self.IOL_PROXY).replace(/\/$/, "") : "https://api.invertironline.com";
 const AD_API = "https://api.argentinadatos.com/v1";
 const INVS = {syncing:false, err:"", cur:"ARS", per:"mes", res:null, resKey:"", market:null, progress:""};
 try { const v = JSON.parse(localStorage.getItem("entredos.inv.view") || "{}"); if (v.cur) INVS.cur = v.cur; if (v.per) INVS.per = v.per; } catch {}
@@ -819,7 +820,7 @@ const iolSave = s => { try { s ? localStorage.setItem(iolKey(), JSON.stringify(s
 async function iolToken(params) {
   let r;
   try { r = await fetch(IOL_API + "/token", {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:new URLSearchParams(params)}); }
-  catch { throw new Error("No pudimos hablar con IOL. Revisá tu conexión."); }
+  catch { throw new Error(self.IOL_PROXY && !/^TU_/.test(self.IOL_PROXY) ? "No pudimos hablar con IOL. Revisá tu conexión." : "Falta configurar el intermediario de IOL (ver Ajustes de la app)."); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.access_token) { const e = new Error(r.status === 400 || r.status === 401 ? "IOL no aceptó el usuario o la contraseña." : "IOL no respondió bien (" + r.status + ")."); e.status = r.status; throw e; }
   return j;
