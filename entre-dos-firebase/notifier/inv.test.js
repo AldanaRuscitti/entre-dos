@@ -125,3 +125,23 @@ test("resumen mensual por Telegram cuando sale la inflación", () => {
   assert.equal(invRecapMsg(sum, [{fecha:"2026-10-31", valor:2}]), null);
   assert.equal(invRecapMsg(null, ipcS), null);
 });
+
+const backup = require("./backup");
+test("respaldo: cifra, se descifra igual (también con WebCrypto como la app) y no lleva lo privado de otros", async () => {
+  const shared = {people:{a:{id:"a", name:"Aldi", uid:"u1"}}, expenses:{e:{id:"e", amount:10}}};
+  const priv = [{id:"t1", kind:"tx", amount:5}, {id:"settings", kind:"settings", cur:"ARS", tgChat:"123"}, {id:"push_x", kind:"push", token:"T"}, {id:"inv_ledger", kind:"inv"}];
+  const b = backup.build(shared, priv, "2026-10-18");
+  assert.equal(b.compartido.personas.a.uid, undefined); assert.equal(b.compartido.personas.a.conCuenta, true);
+  assert.deepStrictEqual(Object.keys(b.soloMio).sort(), ["movimientos", "preferencias"]);
+  assert.equal(b.soloMio.preferencias.tgChat, undefined);
+  const enc = backup.encrypt(b, "clave-larga");
+  assert.ok(!JSON.stringify(enc).includes("Aldi"));
+  assert.deepStrictEqual(backup.decrypt(enc, "clave-larga"), b);
+  assert.throws(() => backup.decrypt(enc, "otra"));
+  // misma cuenta que hace el navegador (index.html decryptBackup)
+  const {subtle} = globalThis.crypto; const b64 = x => Uint8Array.from(Buffer.from(x, "base64"));
+  const base = await subtle.importKey("raw", new TextEncoder().encode("clave-larga"), "PBKDF2", false, ["deriveKey"]);
+  const key = await subtle.deriveKey({name:"PBKDF2", salt:b64(enc.salt), iterations:enc.iter, hash:"SHA-256"}, base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+  const plain = await subtle.decrypt({name:"AES-GCM", iv:b64(enc.iv)}, key, b64(enc.data));
+  assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(plain)), b);
+});

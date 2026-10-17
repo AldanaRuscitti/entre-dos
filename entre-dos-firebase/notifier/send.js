@@ -8,6 +8,8 @@ const {load} = require("./extract");
 const logic = require("./logic");
 const {plan, digest, weekly, localNow, DEF_TZ, HELP, invRecapMsg} = logic;
 const gcal = require("./gcal");
+const backup = require("./backup");
+const BACKUP_PASS = process.env.BACKUP_PASS || "";
 
 const SA = process.env.FIREBASE_SERVICE_ACCOUNT;
 const TG = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
@@ -243,6 +245,31 @@ async function calendar(users, now) {
   finally { await ref.set({...keep, at:r.complete ? startedAt : keep.at, pending:!r.complete, map}); }
 }
 
+// ---------- respaldo semanal cifrado (domingos a la noche, por Telegram) ----------
+async function weeklyBackup(users, now) {
+  if (!BACKUP_PASS || !TG) return;
+  const tz = users.find(u => u.settings?.tz)?.settings.tz || DEF_TZ, loc = localNow(now, tz);
+  const [y, m, d] = loc.day.split("-").map(Number);
+  if (new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== 0 || loc.min < 21 * 60) return;
+  const ref = db.collection("notifState").doc("_backup"); const st = (await ref.get()).data() || {};
+  if (st.day === loc.day) return;
+  const shared = {}; for (const c of Object.keys(backup.SHARED)) shared[c] = await readCol(c);
+  for (const u of users) {
+    if (!u.settings?.tgChat) continue;
+    try {
+      const priv = (await userCol(u.uid).get()).docs.map(x => ({...x.data(), id:x.id}));
+      const file = JSON.stringify(backup.encrypt(backup.build(shared, priv, loc.day), BACKUP_PASS));
+      const fd = new FormData();
+      fd.append("chat_id", String(u.settings.tgChat));
+      fd.append("caption", "🔒 Respaldo semanal de Entre Dos. Para usarlo: Ajustes → Bajar una copia → Importar una copia, y tu clave de respaldo.");
+      fd.append("document", new Blob([file], {type:"application/json"}), `entre-dos-respaldo-${loc.day}.json`);
+      const r = await fetch(`https://api.telegram.org/bot${TG}/sendDocument`, {method:"POST", body:fd});
+      if (!r.ok) console.log(`::warning::Respaldo: Telegram respondió ${r.status}`);
+    } catch { console.log("::warning::Respaldo: no se pudo mandar"); }
+  }
+  await ref.set({day:loc.day});
+}
+
 // ---------- principal ----------
 async function main() {
   const now = new Date();
@@ -254,6 +281,7 @@ async function main() {
   }
   await telegram(users, now);
   await calendar(users, now).catch(e => console.log(`::warning::Calendario de Google: ${e.message}`));
+  await weeklyBackup(users, now).catch(() => console.log("::warning::Respaldo: falló"));
   let total = 0, ipcSeries = null;
   for (const user of users) {
     const ref = db.collection("notifState").doc(user.uid);

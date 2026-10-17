@@ -30,6 +30,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           APP_URL: ${{ vars.APP_URL }}
           GCAL_ID: ${{ secrets.GCAL_ID }}
+          BACKUP_PASS: ${{ secrets.BACKUP_PASS }}
       # GitHub apaga los procesos programados después de 60 días sin cambios en el repositorio. Esto lo mantiene prendido.
       - name: Mantener activo
         if: always()
