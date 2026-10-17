@@ -61,17 +61,19 @@ async function handle(env, up) {
   if (msg && (msg.voice || msg.audio || (msg.photo && msg.photo.length) || (msg.document && /^image\//.test(msg.document.mime_type || "")))) {
     const chat = msg.chat.id;
     await tg(env, "sendChatAction", {chat_id:chat, action:"typing"});
+    let step = "ia";
     try {
+      if (!env.AI) throw new Error("falta el enlace AI");
       let heard = "", cmd = "";
       if (msg.voice || msg.audio) {
-        const bytes = await fileBytes(env, (msg.voice || msg.audio).file_id);
-        heard = await transcribe(env, bytes);
-        if (!heard) throw new Error("vacío");
-        cmd = await toCommand(env, heard);
+        step = "descarga"; const bytes = await fileBytes(env, (msg.voice || msg.audio).file_id);
+        step = "transcripción"; heard = await transcribe(env, bytes);
+        if (!heard) throw new Error("no se escuchó nada");
+        step = "interpretación"; cmd = await toCommand(env, heard).catch(() => "") || guessCommand(heard);
       } else {
         const fid = msg.photo ? msg.photo[msg.photo.length - 1].file_id : msg.document.file_id;
-        const bytes = await fileBytes(env, fid);
-        cmd = await receipt(env, bytes, msg.caption || "");
+        step = "descarga"; const bytes = await fileBytes(env, fid);
+        step = "lectura del ticket"; cmd = await receipt(env, bytes, msg.caption || "");
         heard = msg.caption || "foto de un ticket";
       }
       if (!/^\/(gasto|yo|compra|precio|falta|semana|hoy|manana)\b/.test(cmd)) {
@@ -80,8 +82,9 @@ async function handle(env, up) {
       }
       await tg(env, "sendMessage", {chat_id:chat, text:`Entendí: “${heard.slice(0, 300)}”\n→ ${cmd}`,
         reply_markup:{inline_keyboard:[[{text:"✅ Cargar", callback_data:"ai:ok"}, {text:"✖ No", callback_data:"ai:no"}]]}});
-    } catch {
-      await tg(env, "sendMessage", {chat_id:chat, text:"No pude entender el audio o la foto. Probá de nuevo, o escribime el comando (por ejemplo /gasto 5000 súper mitad)."});
+    } catch (e) {
+      const why = String(e && e.message || e || "").replace(/bot\d+:[\w-]+/g, "").slice(0, 120);
+      await tg(env, "sendMessage", {chat_id:chat, text:`No pude entender el audio o la foto (falló: ${step}${why ? " · " + why : ""}). Probá de nuevo, o escribime el comando (por ejemplo /gasto 5000 súper mitad).`});
     }
     return;
   }
@@ -106,10 +109,26 @@ async function fileBytes(env, fileId) {
 }
 const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
 
+// Telegram manda los audios en OGG/Opus. Probamos los modelos de Whisper de Cloudflare en orden.
 async function transcribe(env, bytes) {
-  try { const r = await env.AI.run("@cf/openai/whisper-large-v3-turbo", {audio:b64(bytes), language:"es"}); if (r && r.text) return r.text.trim(); } catch {}
-  const r2 = await env.AI.run("@cf/openai/whisper", {audio:[...bytes]});
-  return (r2 && r2.text || "").trim();
+  const tries = [
+    () => env.AI.run("@cf/openai/whisper-large-v3-turbo", {audio:b64(bytes), language:"es", task:"transcribe"}),
+    () => env.AI.run("@cf/openai/whisper", {audio:[...bytes]}),
+    () => env.AI.run("@cf/openai/whisper-tiny-en", {audio:[...bytes]}),
+  ];
+  let last;
+  for (const t of tries) { try { const r = await t(); const txt = (r && (r.text || r.transcription_info?.text) || "").trim(); if (txt) return txt; } catch (e) { last = e; } }
+  if (last) throw last; return "";
+}
+// Si la IA no devuelve un comando, armamos uno simple con el monto y las palabras
+function guessCommand(text) {
+  const t = String(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/\b(anota|agrega|suma)\b.*\b(lista|comprar)\b|^(anota|agrega)/.test(t) && !/\d/.test(t)) return "/compra " + t.replace(/^.*?\b(anota|agrega|suma|anotame|agregame)\b\s*(a la lista)?\s*/, "").replace(/\s+y\s+/g, ", ").trim();
+  const m = /(\d[\d.,]*)\s*(lucas?|luquitas?|mil|k)?/.exec(t); if (!m) return "";
+  const n = Math.round(parseFloat(m[1].replace(/\./g, "").replace(",", ".")) * (m[2] ? 1000 : 1)); if (!(n > 0)) return "";
+  const desc = (t.slice(m.index + m[0].length).match(/\b(?:en|de|del|la|el)\s+([a-zñ ]{3,30})/) || t.slice(0, m.index).match(/([a-zñ]{4,})(?:\s+(?:de|por))?\s*$/) || [, "gasto"])[1].replace(/^(la|el|los|las|un|una)\s+/, "").replace(/\b(a medias|medias|mitad|es mio|mio|para mi)\b/g, "").trim().split(" ").slice(0, 3).join(" ") || "gasto";
+  const mine = /\b(es mio|solo mio|para mi)\b/.test(t);
+  return `${mine ? "/yo" : "/gasto"} ${n} ${desc}${!mine && /medias|mitad/.test(t) ? " mitad" : ""}`;
 }
 
 const RULES = `Convertí lo que dice la persona (español rioplatense) en UN comando del bot de una app de pareja. Respondé SOLO el comando, en una línea, sin explicar.
@@ -131,7 +150,7 @@ async function toCommand(env, text) {
   const r = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {messages:[{role:"system", content:RULES}, {role:"user", content:text}], max_tokens:60, temperature:0});
   return clean(r && r.response);
 }
-const clean = s => String(s || "").split("\n").map(x => x.trim()).find(x => x.startsWith("/")) || "";
+const clean = s => { const m = /\/(gasto|yo|compra|precio|falta|semana|hoy|manana)\b[^\n"`]*/i.exec(String(s || "")); return m ? m[0].trim().replace(/^\/\w+/, x => x.toLowerCase()) : ""; };
 
 async function receipt(env, bytes, caption) {
   const model = "@cf/meta/llama-3.2-11b-vision-instruct";
