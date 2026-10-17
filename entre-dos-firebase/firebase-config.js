@@ -19,4 +19,4 @@ self.VAPID_KEY = "BL7OOTYVqwmS-XX67JX0Fl1x3EDKittMqVQn3dbrqSTvd66zQ5iEU82f-A_Qnf
 self.TELEGRAM_BOT = "EntreDosBot";
 
 // 4) Intermediario para IOL (Cloudflare Worker con el código de proxy/iol-worker.js). Ej: https://entre-dos-iol.tu-usuario.workers.dev
-self.IOL_PROXY = "TU_PROXY";
+self.IOL_PROXY = "https://entre-dos-iol.aldanamruscitti.workers.dev";
