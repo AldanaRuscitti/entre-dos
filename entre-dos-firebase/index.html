@@ -380,6 +380,9 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 [data-swipe-r],[data-swipe-l]{touch-action:pan-y;position:relative}
 .sw-r{box-shadow:inset 6px 0 0 var(--pos);background:color-mix(in srgb,var(--pos) 14%,transparent)}
 .sw-l{box-shadow:inset -6px 0 0 var(--neg);background:color-mix(in srgb,var(--neg) 12%,transparent)}
+.sync-pill{position:fixed;top:calc(8px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:45;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--surface);box-shadow:var(--shadow);color:var(--muted)}
+.sync-pill::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;animation:pulse 1s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.3}to{opacity:1}}
 .qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .qa.qa-top{grid-template-columns:repeat(3,minmax(0,1fr))}
 .qa.qa-top button{padding-block:16px}
@@ -481,6 +484,7 @@ details.more .sum-val{margin-left:auto;color:var(--muted);font-weight:600;font-s
   <div class="brand"><span class="brand-mark"><i></i><i></i></span>Entre Dos</div>
   <nav class="nav" id="nav" aria-label="Secciones"></nav>
   <button class="icon-btn eye-btn" id="eyeBtn" data-act="togDiscreet" aria-label="Ocultar montos" aria-pressed="false" hidden><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  <button class="icon-btn" id="searchBtn" data-act="search" aria-label="Buscar en todo" hidden><svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
   <div id="mePill"></div>
 </div></header>
 <nav class="nav bnav" id="bnav" aria-label="Secciones"></nav>
@@ -728,7 +732,7 @@ const appUrl = () => location.origin + location.pathname.replace(/index\.html$/,
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 function gateScreen(msg, showSwitch) {
-  ["#nav", "#bnav", "#fab", "#eyeBtn"].forEach(q => { const el = $(q); if (el) el.hidden = true; }); $("#mePill").innerHTML = "";
+  ["#nav", "#bnav", "#fab", "#eyeBtn", "#searchBtn"].forEach(q => { const el = $(q); if (el) el.hidden = true; }); $("#mePill").innerHTML = "";
   $("#main").innerHTML = `<div class="grid" style="max-width:520px;margin:28px auto">
     <section class="hero" style="margin:0"><div class="eyebrow">Entre Dos</div><h1>La casa, la agenda y la plata, entre los dos</h1><p style="color:var(--hero-muted);margin:0">Entrá con tu cuenta de Google.</p></section>
     <section class="card grid" style="gap:12px">${msg ? `<p class="hint-warn" style="margin:0">${msg}</p>` : ""}
@@ -1113,6 +1117,7 @@ function touchSync(path) {
   _touchAt = Date.now(); DB.doc("config/sync").set({at:Date.now()}).catch(() => {});
 }
 async function put(path, data) {
+  if (!DB) { toast("Conectando… probá de nuevo en un segundo."); throw new Error("sin conexión todavía"); }
   touchSync(path);
   try { await DB.doc(path).set(clean(data)); }
   catch (e) {
@@ -1122,6 +1127,7 @@ async function put(path, data) {
 }
 async function bgDelete(paths) { if (paths[0]) touchSync(paths[0]); for (let k = 0; k < paths.length; k++) { try { await DB.doc(paths[k]).delete(); } catch { break; } if (k % 20 === 19) await new Promise(r => setTimeout(r, 300)); } }
 async function patch(path, fields) {
+  if (!DB) { toast("Conectando… probá de nuevo en un segundo."); throw new Error("sin conexión todavía"); }
   touchSync(path);
   const go = () => DB.doc(path).update(clean(fields));
   try { await go(); } catch (e) {
@@ -1130,12 +1136,45 @@ async function patch(path, fields) {
   }
 }
 const hash = s => { let h = 5381; for (const ch of s) h = (h * 33 ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };
-async function del(path) { touchSync(path); try { await DB.doc(path).delete(); } catch (e) { toast(errMsg(e)); throw e; } }
+async function del(path) { if (!DB) { toast("Conectando… probá de nuevo en un segundo."); throw new Error("sin conexión todavía"); } touchSync(path); try { await DB.doc(path).delete(); } catch (e) { toast(errMsg(e)); throw e; } }
 
+/* ---------- arranque instantáneo: mostramos lo último que había en este celu mientras se conecta ---------- */
+const SNAP_KEY = "entredos.snap.v1";
+const SNAP_COLS = ["people", "groups", "events", "expenses", "config", "lists", "items", "fixed", "goals", "contribs", "chores", "choreLog", "dues", "polls", "thanks", "pets", "meals", "ideas", "checkins", "prices"];
+let snapT = null;
+function saveSnap() {
+  if (!S.ready || S.stale || !S.uid || S.local) return;
+  clearTimeout(snapT); snapT = setTimeout(() => {
+    try {
+      const old = ymdShift(todayS(), -400);
+      const shared = {}; for (const c of SNAP_COLS) shared[c] = S[c];
+      shared.expenses = Object.fromEntries(Object.entries(S.expenses).filter(([, e]) => (e.date || "") >= old || (e.date || "") > todayS()));
+      shared.choreLog = Object.fromEntries(Object.entries(S.choreLog).filter(([, l]) => (l.date || "") >= ymdShift(todayS(), -120)));
+      const {push, inv, ...priv} = S.priv;
+      const data = JSON.stringify({uid:S.uid, at:Date.now(), shared, priv:{...priv, inv:inv?.inv_summary ? {inv_summary:inv.inv_summary} : {}}});
+      if (data.length < 3.5e6) localStorage.setItem(SNAP_KEY, data);
+    } catch {}
+  }, 1500);
+}
+function loadSnap() {
+  try {
+    const j = JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
+    if (!j || !j.uid || !j.shared || Date.now() - j.at > 45 * 864e5) return false;
+    for (const c of SNAP_COLS) if (j.shared[c]) S[c] = j.shared[c];
+    S.priv = {...S.priv, ...(j.priv || {}), push:{}};
+    S.uid = j.uid; S.ready = true; S.stale = true; S.snapUid = j.uid;
+    for (const c of [...SNAP_COLS, "priv"]) bump(c);
+    return true;
+  } catch { return false; }
+}
+const clearSnap = () => { try { localStorage.removeItem(SNAP_KEY); } catch {} };
 async function boot() {
+  if (fbConfigured() && loadSnap()) render();
   if (fbConfigured()) {
-    const r = await fbBoot(); if (!r) return;
+    const r = await fbBoot(); if (!r) { S.stale = false; S.ready = false; clearSnap(); return; }
     DB = r.db; S.uid = r.uid; S.email = r.email;
+    // si en este celu entró otra cuenta, no mostramos lo guardado de la anterior
+    if (S.snapUid && S.snapUid !== r.uid) { clearSnap(); for (const c of SNAP_COLS) S[c] = {}; S.priv = {events:{}, tx:{}, tpl:{}, goals:{}, gcontribs:{}, dues:{}, gifts:{}, push:{}, inv:{}, settings:null}; S.ready = false; S.stale = false; render(); }
   } else {
     DB = makeLocalDB(); S.uid = "local"; S.local = true;
   }
@@ -1143,7 +1182,7 @@ async function boot() {
   const loaded = new Set();
   const SHARED = ["people", "groups", "events", "expenses", "config", "lists", "items", "fixed", "goals", "contribs", "chores", "choreLog", "dues", "polls", "thanks", "pets", "meals", "ideas", "checkins", "prices"];
   const need = [...SHARED, "priv"];
-  const mark = k => { loaded.add(k); if (!S.ready && need.every(n => loaded.has(n))) { S.ready = true; } schedule(); };
+  const mark = k => { loaded.add(k); if ((!S.ready || S.stale) && need.every(n => loaded.has(n))) { S.ready = true; S.stale = false; } schedule(); saveSnap(); };
   S.err = {};
   const SANMAP = {event:"events", tx:"tx", tpl:"tpl", goal:"goals", gcontrib:"gcontribs", due:"dues", gift:"gifts", push:"push", inv:"inv"};
   const onErr = c => e => {
@@ -1216,7 +1255,7 @@ function renderInner() {
   const navHtml = me ? VIEWS.filter(v => v[0] !== "ajustes").map(navBtn).join("") : "";
   for (const n of [$("#nav"), $("#bnav")]) { n.innerHTML = navHtml; n.hidden = !me; }
   $("#fab").hidden = !me || S.readOnly;
-  $("#eyeBtn").hidden = !me; applyDiscreet();
+  $("#eyeBtn").hidden = !me; $("#searchBtn").hidden = !me; applyDiscreet();
   if (!S.lockChecked) { S.lockChecked = true; if (store.get("pin", null)) setLocked(true); }
   { const known = store.get("uids", {}), now = {}; let changed = false;
     for (const pp of Object.values(S.people)) { now[pp.id] = pp.uid || null; if (pp.id in known && known[pp.id] && known[pp.id] !== now[pp.id] && pp.uid !== S.uid) { (S.uidAlerts ||= new Set()).add(pp.id); } if (known[pp.id] !== now[pp.id]) changed = true; }
@@ -1230,6 +1269,7 @@ function renderInner() {
   let html = "";
   if (S.local) html += `<div class="banner"><b>Solo en este dispositivo.</b> No pudimos conectarnos, así que lo que cargues queda acá y tu pareja no lo va a ver. Todo, incluso lo "Solo yo", queda guardado en este navegador: no lo uses así en una computadora compartida. Revisá la configuración en firebase-config.js.</div>`;
   const errs = Object.keys(S.err || {});
+  if (S.stale) html += `<div class="sync-pill" role="status">Sincronizando…</div>`;
   if (S.fatal) html += `<div class="banner"><b>Se cortó el acceso a los datos.</b> Recargá la página para seguir.</div>`;
   else if (errs.length) html += `<div class="banner"><b>No pudimos cargar todo.</b> Estamos reintentando; esperá un momento antes de cargar cosas nuevas.</div>`;
   if (!me && (S.err?.people || S.err?.groups)) { main.innerHTML = html; return; }
@@ -1887,6 +1927,49 @@ function checkItem(i, showList) {
     ${i.by && S.people[i.by] ? `<span class="dot" style="--c:${esc(pColor(i.by))}" title="Lo agregó ${esc(pName(i.by))}"></span>` : ""}
     <button class="x-btn" type="button" data-act="delItem" data-id="${esc(i.id)}" aria-label="Borrar ${esc(i.text)}">×</button></div>`;
 }
+/* ---------- buscar en todo ---------- */
+const fold = t => String(t ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+function searchAll(q) {
+  const words = fold(q).trim().split(/\s+/).filter(Boolean); if (!words.length) return [];
+  const digits = q.replace(/[^\d]/g, "");
+  const hit = (...fields) => { const h = fold(fields.filter(Boolean).join(" ")); return words.every(w => h.includes(w)); };
+  const amt = v => digits.length >= 3 && String(Math.round(Number(v) || 0)).includes(digits);
+  const out = [], me = meId(), c = cfg();
+  for (const e of Object.values(S.expenses)) { const cat = catOf(c.expCats, e.cat).name;
+    if (e.kind === "payment" ? hit("pago", pName(e.from), pName(e.to)) || amt(e.amount) : hit(e.desc, e.note, cat, pName(e.paidBy), S.groups[e.group]?.name) || amt(e.amount))
+      out.push({sec:"Gastos compartidos", date:e.date, t:e.kind === "payment" ? `${pName(e.from)} le pasó a ${pName(e.to)}` : e.desc, s:`${shortDate(e.date || todayS())} · ${money(e.amount, e.cur)} · ${S.groups[e.group]?.name || ""}`, act:"editExpense", id:e.id}); }
+  for (const x of Object.values(S.priv.tx || {})) if (hit(x.desc, catOf(x.type === "ingreso" ? c.incCats : c.expCats, x.cat).name) || amt(x.amount))
+    out.push({sec:"Mis movimientos", date:x.date, t:x.desc || "Movimiento", s:`${shortDate(x.date)} · ${x.type === "ingreso" ? "+" : "−"}${money(x.amount, x.cur)}`, act:"editTx", id:x.id});
+  for (const e of allEvents()) if (!e.busy && hit(e.title, e.place, e.note)) out.push({sec:"Agenda", date:e.date, t:e.title, s:`${shortDate(e.date)}${e.repeat && e.repeat !== "none" ? " · se repite" : ""}${e.start && !e.allDay ? " · " + e.start : ""}`, act:"editEvent", id:e.id});
+  for (const d of allDues()) if (hit(d.title, d.note, dueCat(d.cat).name)) out.push({sec:"Fechas", date:d.due, t:d.title, s:`${shortDate(d.due)} · ${dueEvery(d)}`, act:"editDue", id:d.id, scope:d.scope});
+  for (const ch of Object.values(S.chores)) if (hit(ch.name)) { const st = choreState(ch); out.push({sec:"Tareas", date:st.due, t:ch.name, s:st.who ? (st.who === me ? "Te toca a vos" : "Le toca a " + pName(st.who)) : "Cualquiera", act:"editChore", id:ch.id}); }
+  for (const i of Object.values(S.items)) if (S.lists[i.list] && hit(i.text)) out.push({sec:"Listas", date:"", t:i.text, s:`${S.lists[i.list].name}${i.done ? " · ya está" : " · falta"}`, act:"searchItem", id:i.id});
+  for (const g of allGoals()) if (hit(g.name, g.note)) out.push({sec:"Metas", date:"", t:g.name, s:g.scope === "private" ? "Solo vos" : "Compartida", act:"editGoal", id:g.id, scope:g.scope});
+  for (const m of Object.values(S.meals)) if (hit(m.text, (m.ingr || []).join(" "))) out.push({sec:"Menú", date:m.date, t:m.text, s:`${shortDate(m.date)} · ${m.slot}`, act:"mealOpen", d:m.date, slot:m.slot});
+  for (const i of Object.values(S.ideas)) if (hit(i.text, i.memory)) out.push({sec:"Planes", date:"", t:i.text, s:i.doneAt ? "Ya lo hicieron" : "Para hacer", act:"searchIdea"});
+  const ps = {}; for (const p of Object.values(S.prices)) if (hit(p.text) && (!ps[p.key] || p.date > ps[p.key].date)) ps[p.key] = p;
+  for (const p of Object.values(ps)) out.push({sec:"Precios", date:p.date, t:p.text, s:`Último: ${money(p.price, "ARS").replace(/,00$/, "")} (${shortDate(p.date)})`, act:"searchPrice"});
+  for (const p of Object.values(S.pets)) if (hit(p.name, p.vet, p.food, p.meds)) out.push({sec:"Mascotas", date:"", t:p.name, s:"Ficha", act:"editPet", id:p.id});
+  const order = ["Listas", "Tareas", "Agenda", "Fechas", "Gastos compartidos", "Mis movimientos", "Precios", "Menú", "Planes", "Metas", "Mascotas"];
+  return out.sort((a, b) => order.indexOf(a.sec) - order.indexOf(b.sec) || (b.date || "").localeCompare(a.date || ""));
+}
+function searchSheet() {
+  openSheet("Buscar en todo", `<input class="input" id="searchQ" type="search" placeholder="Leche, dentista, alquiler, 18000…" autocomplete="off" enterkeyhint="search" aria-label="Qué buscás">
+    <div id="searchRes" class="list" style="margin-top:10px"><p class="small muted" style="margin:6px 2px">Busca en gastos, tus movimientos, agenda, fechas, tareas, listas, menú, planes, precios y metas.</p></div>`, null, () => {
+    const inp = $("#searchQ"); let t = null; setTimeout(() => inp.focus(), 60);
+    inp.value = S.lastSearch || ""; const run = () => {
+      S.lastSearch = inp.value; const res = searchAll(inp.value), box = $("#searchRes"); if (!box) return;
+      if (!inp.value.trim()) { box.innerHTML = `<p class="small muted" style="margin:6px 2px">Busca en gastos, tus movimientos, agenda, fechas, tareas, listas, menú, planes, precios y metas.</p>`; return; }
+      if (!res.length) { box.innerHTML = `<div class="empty"><b>No encontramos nada</b>Probá con otra palabra o un monto.</div>`; return; }
+      let sec = "", html = "";
+      for (const r of res.slice(0, 60)) { if (r.sec !== sec) { sec = r.sec; html += `<div class="month-h">${esc(sec)}</div>`; }
+        html += `<div class="item click" data-act="${esc(r.act)}" ${r.id ? `data-id="${esc(r.id)}"` : ""} ${r.scope ? `data-scope="${esc(r.scope)}"` : ""} ${r.d ? `data-d="${esc(r.d)}" data-slot="${esc(r.slot)}"` : ""}><div class="grow"><div class="t">${esc(r.t || "")}</div><div class="s">${esc(r.s || "")}</div></div><span class="muted">›</span></div>`; }
+      if (res.length > 60) html += `<p class="small muted">Y ${res.length - 60} más: escribí algo más específico.</p>`;
+      box.innerHTML = html; };
+    inp.addEventListener("input", () => { clearTimeout(t); t = setTimeout(run, 120); }); if (inp.value) run();
+  });
+}
+
 /* ---------- precios del súper: la inflación de la casa ---------- */
 const priceKey = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b\d+\s*(kg|g|gr|l|lt|ml|u|un|x)\b/g, "").replace(/[^a-z0-9ñ ]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 let priceT = null;
@@ -3551,7 +3634,7 @@ const A = {
   signIn: async () => { const prov = new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
     try { await firebase.auth().signInWithPopup(prov); location.reload(); }
     catch (e) { const c = e && e.code; if (c === "auth/popup-blocked" || c === "auth/operation-not-supported-in-this-environment" || c === "auth/cancelled-popup-request") { try { await firebase.auth().signInWithRedirect(prov); } catch { toast("No se pudo abrir el inicio de sesión."); } } else if (c !== "auth/popup-closed-by-user") toast("No se pudo entrar. Probá de nuevo."); } },
-  signOut: async () => { try { await firebase.auth().signOut(); } catch {} location.reload(); },
+  signOut: async () => { clearSnap(); try { await firebase.auth().signOut(); } catch {} location.reload(); },
   tgOn: async () => { const code = (newId() + newId()).replace(/[^a-z0-9]/gi, "").slice(0, 12); await savePrefs({tgCode:code, tgChat:null}); toast("Tocá el link de Telegram que apareció en Avisos."); },
   tgOff: async () => { await savePrefs({tgCode:null, tgChat:null}); toast("Telegram desconectado"); },
   pushOn: async () => {
@@ -3749,6 +3832,10 @@ Object.assign(A, {
   invMonth: t => invMonthSheet(t.dataset.ym),
   invHolding: t => invHoldingSheet(t.dataset.sym),
   invLogout: () => { iolSave(null); closeSheet(); toast("Desconectado de este celu. Tus números quedan."); render(); },
+  search: () => searchSheet(),
+  searchItem: t => { const i = S.items[t.dataset.id]; if (!i) return; closeSheet(); S.listId = i.list; store.set("listId", i.list); S.hTab = "listas"; S.view = "hogar"; render(); window.scrollTo({top:0}); },
+  searchIdea: () => { closeSheet(); S.hTab = "decidir"; S.view = "hogar"; render(); window.scrollTo({top:0}); },
+  searchPrice: () => { closeSheet(); S.hTab = "listas"; S.view = "hogar"; render(); setTimeout(() => [...document.querySelectorAll("section.card h2")].find(h => /Precios/.test(h.textContent))?.scrollIntoView({block:"start"}), 50); },
   priceNew: () => priceSheet(),
   priceClose: () => { const b = $("#priceBar"); if (b) b.hidden = true; },
   choreMenu: t => { const c = S.chores[t.dataset.id]; if (c) choreMenuSheet(c); },
