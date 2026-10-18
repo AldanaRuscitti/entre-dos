@@ -170,6 +170,33 @@ const INV = (() => {
     const verdict = cur !== "ARS" ? (gain > 0 ? "up" : gain < 0 ? "down" : "flat") : pp == null ? null : pp > 0.5 ? "win" : pp < -0.5 ? "lose" : "tie";
     return {gain, r, ipc, ipcEst:infEst, pp, real:r != null && ipc != null ? (1 + r) / (1 + ipc) - 1 : null, verdict, from:ms[0].ym, to:ms[ms.length - 1].ym, n:ms.length};
   }
-  return {normOp, normPos, compute, period, mepFn, ipcMap, priceFn, ymAdd, monthEnd, shift, ccyOf, isFci};
+  // ---------- alquiler: próximo aumento por ICL (BCRA) o IPC (INDEC) ----------
+  // rent = {amount, start, every (meses), index:"ICL"|"IPC"|"none", last:{date, amount}}
+  const addMonths = (d, n) => { const y = +d.slice(0, 4), m = +d.slice(5, 7) - 1 + n, day = +d.slice(8, 10); const ny = y + Math.floor(m / 12), nm = ((m % 12) + 12) % 12; const dim = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate(); return `${ny}-${pad(nm + 1)}-${pad(Math.min(day, dim))}`; };
+  function rentNext(rent, today) {
+    const base = rent.last?.date || rent.start; if (!base) return null;
+    let next = addMonths(base, Math.max(1, Number(rent.every) || 12));
+    return next;
+  }
+  function rentCalc(rent, {icl, ipc, today}) {
+    const lastDate = rent.last?.date || rent.start, amount = Number(rent.last?.amount || rent.amount) || 0, next = rentNext(rent, today);
+    if (!lastDate || !next || !amount) return null;
+    const out = {lastDate, amount, next, index:rent.index || "none", factor:null, newAmount:null, estimated:false, upto:null};
+    if (rent.index === "ICL") {
+      const ds = Object.keys(icl || {}).sort(); if (!ds.length) return {...out, missing:true};
+      const at = d => { let v = null; for (const x of ds) { if (x <= d) v = icl[x]; else break; } return v; };
+      const v0 = at(lastDate), target = next <= ds[ds.length - 1] ? next : ds[ds.length - 1], v1 = at(target);
+      if (!v0 || !v1) return {...out, missing:true};
+      return {...out, factor:v1 / v0, newAmount:Math.round(amount * v1 / v0), estimated:target < next, upto:target};
+    }
+    if (rent.index === "IPC") {
+      const m = ipcMap(ipc); const known = Object.keys(m).sort(); if (!known.length) return {...out, missing:true};
+      let f = 1, est = false, upto = null;
+      for (let ym = lastDate.slice(0, 7); ym < next.slice(0, 7); ym = ymAdd(ym, 1)) { if (m[ym] != null) { f *= 1 + m[ym]; upto = ym; } else { f *= 1 + m[known[known.length - 1]]; est = true; } }
+      return {...out, factor:f, newAmount:Math.round(amount * f), estimated:est, upto};
+    }
+    return out;
+  }
+  return {rentNext, rentCalc, addMonths, normOp, normPos, compute, period, mepFn, ipcMap, priceFn, ymAdd, monthEnd, shift, ccyOf, isFci};
 })();
 if (typeof module !== "undefined") module.exports = INV;

@@ -267,6 +267,28 @@ async function calendar(users, now) {
   finally { await ref.set({...keep, at:r.complete ? startedAt : keep.at, pending:!r.complete, map}); }
 }
 
+// ---------- índice ICL (alquileres) del BCRA, una vez por día, para que la app calcule el aumento ----------
+// El sitio del BCRA tiene mal armada su cadena de certificados, por eso lo leemos sin validarla: es un dato público y lo chequeamos (valores positivos y crecientes).
+function bcraGet(path) {
+  return new Promise((res, rej) => {
+    require("node:https").get({host:"api.bcra.gob.ar", path, rejectUnauthorized:false, headers:{Accept:"application/json"}, timeout:20000}, r => {
+      let b = ""; r.on("data", c => b += c); r.on("end", () => { try { res(JSON.parse(b)); } catch (e) { rej(e); } });
+    }).on("error", rej).on("timeout", function () { this.destroy(new Error("timeout")); });
+  });
+}
+async function iclDaily(now) {
+  const ref = db.collection("notifState").doc("_market"), st = (await ref.get()).data() || {}, day = localNow(now, DEF_TZ).day;
+  if (st.iclDay === day) return;
+  const from = new Date(now.getTime() - 3 * 365 * 864e5).toISOString().slice(0, 10);
+  const j = await bcraGet(`/estadisticas/v4.0/monetarias/40?desde=${from}&hasta=${day}&limit=3000`);
+  const det = j?.results?.[0]?.detalle || [];
+  const series = {}; for (const x of det) if (/^\d{4}-\d{2}-\d{2}$/.test(x.fecha) && Number(x.valor) > 0) series[x.fecha] = Number(x.valor);
+  const ds = Object.keys(series).sort();
+  if (ds.length < 30 || series[ds[ds.length - 1]] < series[ds[0]]) throw new Error("ICL con datos raros");
+  await db.collection("market").doc("icl").set({series, at:Date.now(), last:ds[ds.length - 1]});
+  await ref.set({...st, iclDay:day});
+}
+
 // ---------- respaldo semanal cifrado (domingos a la noche, por Telegram) ----------
 async function weeklyBackup(users, now) {
   if (!BACKUP_PASS || !TG) return;
@@ -304,6 +326,7 @@ async function main() {
   await telegram(users, now);
   await calendar(users, now).catch(e => console.log(`::warning::Calendario de Google: ${e.message}`));
   await weeklyBackup(users, now).catch(() => console.log("::warning::Respaldo: falló"));
+  await iclDaily(now).catch(() => console.log("::warning::ICL: no se pudo actualizar"));
   let total = 0, ipcSeries = null;
   for (const user of users) {
     const ref = db.collection("notifState").doc(user.uid);

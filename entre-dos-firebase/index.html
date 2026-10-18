@@ -17,7 +17,7 @@
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="inversiones-calc.js"></script>
+<script src="inversiones-calc.js?v=9590ae5e"></script>
 </head>
 <body>
 <title>Entre Dos</title>
@@ -1122,7 +1122,7 @@ async function put(path, data) {
   try { await DB.doc(path).set(clean(data)); }
   catch (e) {
     if (e && (e.code === "unavailable" || e.code === "resource_exhausted")) { await new Promise(r => setTimeout(r, (e.code === "unavailable" ? 400 : 1500) + Math.random() * 800)); try { await DB.doc(path).set(clean(data)); return; } catch (e2) { e = e2; } }
-    toast(errMsg(e)); throw e;
+    logErr("guardar", e); toast(errMsg(e)); throw e;
   }
 }
 async function bgDelete(paths) { if (paths[0]) touchSync(paths[0]); for (let k = 0; k < paths.length; k++) { try { await DB.doc(paths[k]).delete(); } catch { break; } if (k % 20 === 19) await new Promise(r => setTimeout(r, 300)); } }
@@ -1132,11 +1132,11 @@ async function patch(path, fields) {
   const go = () => DB.doc(path).update(clean(fields));
   try { await go(); } catch (e) {
     if (e && (e.code === "unavailable" || e.code === "resource_exhausted")) { await new Promise(r => setTimeout(r, 600 + Math.random() * 800)); try { await go(); return; } catch (e2) { e = e2; } }
-    toast(errMsg(e)); throw e;
+    logErr("guardar", e); toast(errMsg(e)); throw e;
   }
 }
 const hash = s => { let h = 5381; for (const ch of s) h = (h * 33 ^ ch.charCodeAt(0)) >>> 0; return h.toString(36); };
-async function del(path) { if (!DB) { toast("Conectando… probá de nuevo en un segundo."); throw new Error("sin conexión todavía"); } touchSync(path); try { await DB.doc(path).delete(); } catch (e) { toast(errMsg(e)); throw e; } }
+async function del(path) { if (!DB) { toast("Conectando… probá de nuevo en un segundo."); throw new Error("sin conexión todavía"); } touchSync(path); try { await DB.doc(path).delete(); } catch (e) { logErr("guardar", e); toast(errMsg(e)); throw e; } }
 
 /* ---------- arranque instantáneo: mostramos lo último que había en este celu mientras se conecta ---------- */
 const SNAP_KEY = "entredos.snap.v1";
@@ -1240,9 +1240,28 @@ const ICONS = {
 };
 const VIEWS = [["inicio","Inicio"],["agenda","Agenda"],["cuentas","Cuentas"],["finanzas","Mis finanzas"],["hogar","Hogar"],["ajustes","Ajustes"]];
 
+/* ---------- registro de errores (solo en este celu, sin datos personales) ---------- */
+const ERR_KEY = "entredos.errlog";
+const scrub = t => String(t ?? "").replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "[mail]").replace(/\b(eyJ|ya29\.)[\w.-]+/g, "[token]").replace(/\b\d{5,}\b/g, "[n]").replace(/"[^"]{40,}"/g, '"[texto]"').slice(0, 300);
+function logErr(where, e) {
+  try {
+    const list = JSON.parse(localStorage.getItem(ERR_KEY) || "[]");
+    const stack = String(e && e.stack || "").split("\n").slice(0, 3).map(x => x.trim().replace(/https?:\/\/[^ )]+\//g, "")).join(" ← ");
+    list.push({at:new Date().toISOString(), where, view:S.view + (S.view === "hogar" ? "/" + S.hTab : S.view === "finanzas" ? "/" + S.fTab : ""), msg:scrub(e && (e.code ? e.code + ": " : "") + (e && e.message || e)), stack:scrub(stack)});
+    localStorage.setItem(ERR_KEY, JSON.stringify(list.slice(-50)));
+  } catch {}
+}
+window.addEventListener("error", ev => logErr("error", ev.error || ev.message));
+window.addEventListener("unhandledrejection", ev => logErr("promesa", ev.reason));
+function errLogSheet() {
+  let list = []; try { list = JSON.parse(localStorage.getItem(ERR_KEY) || "[]"); } catch {}
+  showDoc("Registro de errores", list.length ? `<p class="small muted" style="margin:0 0 8px">Lo último que falló en este celu (${list.length}). No incluye mails, montos ni textos tuyos. Copiá el reporte y mandáselo a quien te ayuda con la app.</p>
+    <div class="row" style="gap:8px;margin-bottom:8px"><button class="btn sm primary" data-act="errCopy">Copiar reporte</button><button class="btn sm" data-act="errClear">Borrar registro</button></div>
+    <div class="list">${list.slice().reverse().slice(0, 20).map(x => `<div class="item"><div class="grow"><div class="t small">${esc(x.msg)}</div><div class="s">${esc(x.at.slice(0, 16).replace("T", " "))} · ${esc(x.where)} · ${esc(x.view || "")}</div></div></div>`).join("")}</div>` : `<div class="empty"><b>Sin errores</b>No se registró ningún problema en este celu.</div>`);
+}
 function render() {
   try { renderInner(); } catch (e) {
-    console.error(e);
+    console.error(e); logErr("pantalla", e);
     $("#main").innerHTML = '<div class="banner"><b>Hay un dato que no pudimos mostrar.</b> Tus datos siguen guardados. Recargá la página; si sigue pasando, bajá una copia. <button class="btn sm" data-act="exportJson">Bajar una copia</button></div>';
   }
 }
@@ -1622,7 +1641,7 @@ V.agenda = () => {
   const head = `<div class="page-head"><h1>Agenda</h1>${helpBtn(S.calMode === "fechas" ? "fechas" : "agenda")}
     <div class="seg" role="group" aria-label="Vista"><label><input type="radio" name="calmode" value="mes" data-chg="calMode" ${S.calMode === "mes" ? "checked" : ""}><span>Mes</span></label><label><input type="radio" name="calmode" value="lista" data-chg="calMode" ${S.calMode === "lista" ? "checked" : ""}><span>Lista</span></label><label><input type="radio" name="calmode" value="fechas" data-chg="calMode" ${S.calMode === "fechas" ? "checked" : ""}><span>Fechas</span></label></div>
     ${S.calMode === "fechas" ? '<button class="btn primary" data-act="newDue">+ Fecha</button>' : '<button class="btn primary" data-act="newEvent">+ Evento</button>'}</div>`;
-  if (S.calMode === "fechas") return head + fechasBody() + mascotasBody();
+  if (S.calMode === "fechas") return head + rentCard() + fechasBody() + mascotasBody();
   if (S.calMode === "lista") {
     const from = t, to = ymd(addDays(new Date(), 60));
     const mp = eventsByDay(from, to), dm = duesByDay(from, to); const days = [...new Set([...Object.keys(mp), ...Object.keys(dm)])].sort();
@@ -1839,6 +1858,7 @@ V.ajustes = () => {
     </section>
     ${avisosPending || !FB.ok ? "" : `<h2 class="set-group" id="sg-avisos">Avisos</h2>${avisosCard()}`}
     <h2 class="set-group" id="sg-datos">Datos</h2>
+    <section class="card"><h2>¿Algo no anda?</h2><p class="small muted" style="margin:-4px 0 8px">La app anota los errores en este celu, sin datos personales, para poder arreglarlos.</p><button class="btn sm" data-act="errLog">Ver registro de errores</button></section>
     <section class="card"><h2>Bajar una copia</h2>
       <p class="small muted" style="margin-top:-4px">Bajá una copia para guardarla o abrirla en Excel. Incluye lo compartido y lo tuyo privado; nunca lo privado de otras personas. Con "Importar una copia" traés lo que tenías en la versión anterior.</p>
       <div class="export-btns">
@@ -2745,6 +2765,49 @@ function dueRow(d) {
       ${d.cat === "familia" && giftOf(d.id)?.idea ? `<div class="small" style="margin-top:3px">🎁 ${esc(giftOf(d.id).idea)}</div>` : ""}
       <div style="margin-top:4px">${dueDateBadge(d)}</div></div>
     ${near ? `<button class="btn sm primary" data-act="doneDue" data-id="${esc(d.id)}" data-scope="${d.scope}">Ya está</button>` : ""}</div>`;
+}
+/* ---------- alquiler: aumento por ICL o IPC ---------- */
+function rentLoadIcl() {
+  if (S.iclLoading || (S.icl && Date.now() - S.icl.loadedAt < 3600e3) || !DB) return;
+  S.iclLoading = true;
+  DB.doc("market/icl").get().then(d => { S.icl = {...(d.exists ? d.data() : {}), loadedAt:Date.now()}; }).catch(() => { S.icl = {loadedAt:Date.now()}; }).finally(() => { S.iclLoading = false; render(); });
+}
+function rentCard() {
+  const r = cfg().rent;
+  if (!r) return `<section class="card" style="max-width:760px;margin-bottom:14px"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">🏠</span><span class="small muted" style="flex:1">¿Alquilan? Cargá el contrato y te avisamos antes de cada aumento, con el monto nuevo calculado con el índice oficial.</span><button class="btn sm" data-act="rentEdit">Cargar</button></div></section>`;
+  if (r.index === "ICL") rentLoadIcl();
+  if (r.index === "IPC" && !INVS.market && !INVS.mkTried3) { INVS.mkTried3 = true; invMarket().then(() => render()).catch(() => {}); }
+  const c = INV.rentCalc(r, {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()});
+  if (!c) return "";
+  const days = daysBetween(todayS(), c.next), cur = r.cur || "ARS";
+  const pct = c.factor ? (c.factor - 1) * 100 : null;
+  const calcTxt = r.index === "none" ? "Sin índice: cargá el monto nuevo cuando te avisen." : c.missing ? (r.index === "ICL" ? "Todavía no tenemos el ICL del BCRA (se actualiza una vez por día)." : "Todavía no tenemos la inflación del INDEC.")
+    : `${c.estimated ? "Estimado" : "Según el índice"}: <b class="money">${esc(money(c.newAmount, cur).replace(/,00$/, ""))}</b> (${pct >= 0 ? "+" : ""}${pct.toLocaleString("es-AR", {maximumFractionDigits:1})}%)${c.estimated ? ` · con el ${r.index} ${r.index === "ICL" ? "al " + esc(shortDate(c.upto)) : "publicado hasta " + esc(MONTHS[Number(String(c.upto || "").slice(5, 7)) - 1] || "")}; puede cambiar un poco` : ""}.`;
+  return `<section class="card" style="max-width:760px;margin-bottom:14px"><div class="card-h"><span class="ic">🏠</span><h2>Alquiler</h2><button class="btn ghost sm spacer" data-act="rentEdit">Editar</button></div>
+    <p style="margin:0">Hoy pagan <b class="money">${esc(money(c.amount, cur).replace(/,00$/, ""))}</b>. Próximo aumento: <b>${esc(DOWL[wdayOf(c.next)])} ${esc(shortDate(c.next))}</b>${days >= 0 ? ` (${days === 0 ? "hoy" : days === 1 ? "mañana" : "en " + days + " días"})` : ` (hace ${-days} días)`} · ajusta por ${r.index === "none" ? "monto fijo" : r.index} cada ${Number(r.every) || 12} meses.</p>
+    <p class="small" style="margin:6px 0 0">${calcTxt}</p>
+    ${days <= 10 && c.newAmount ? `<div class="row" style="margin-top:10px"><button class="btn sm primary" data-act="rentApply">Aplicar el aumento</button><span class="small muted">Actualiza el monto${r.fixedId && S.fixed[r.fixedId] ? " y el gasto fijo" : ""}.</span></div>` : ""}</section>`;
+}
+function rentSheet() {
+  const r = cfg().rent || {every:12, index:"ICL", cur:"ARS", start:todayS()};
+  const fixedOpts = Object.values(S.fixed).map(f => `<option value="${esc(f.id)}" ${r.fixedId === f.id ? "selected" : ""}>${esc(f.desc || "Gasto fijo")} (${esc(money(f.amount, f.cur).replace(/,00$/, ""))})</option>`).join("");
+  openSheet("Contrato de alquiler", `<div class="frow"><label class="field"><span>Monto que pagan hoy</span><input class="input money" name="amount" inputmode="decimal" value="${esc(amtStr(r.last?.amount || r.amount))}"></label>
+      <label class="field"><span>Último aumento (o inicio del contrato)</span><input class="input" type="date" name="since" value="${esc(r.last?.date || r.start || todayS())}"></label></div>
+    <div class="frow"><label class="field"><span>Ajusta cada</span><select class="input" name="every">${[3, 4, 6, 12].map(n => `<option value="${n}" ${Number(r.every) === n ? "selected" : ""}>${n} meses</option>`).join("")}</select></label>
+      <label class="field"><span>Por</span><select class="input" name="index"><option value="ICL" ${r.index === "ICL" ? "selected" : ""}>ICL (BCRA, contratos 2020–2023)</option><option value="IPC" ${r.index === "IPC" ? "selected" : ""}>IPC (inflación INDEC)</option><option value="none" ${r.index === "none" ? "selected" : ""}>Otro / monto pactado</option></select></label></div>
+    ${fixedOpts ? `<label class="field"><span>Gasto fijo del alquiler (opcional)</span><select class="input" name="fixedId"><option value="">—</option>${fixedOpts}</select><small class="muted">Al aplicar el aumento, se actualiza solo.</small></label>` : ""}
+    <p class="small muted" style="margin:0">Te avisamos 15 días antes, por los avisos de siempre. El cálculo es orientativo: revisá lo que diga tu contrato.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Guardar</button>${cfg().rent ? `<button class="btn danger spacer" type="button" data-act="rentDel">Quitar</button>` : ""}</div>`, async fd => {
+    const amount = parseAmt(fd.get("amount") || ""), since = fd.get("since");
+    if (!(amount > 0)) return formErr("Poné el monto que pagan hoy.", "amount"); if (!YMD.test(since || "")) return formErr("Elegí la fecha.", "since");
+    const rent = {amount, start:r.start && r.start < since ? r.start : since, every:Number(fd.get("every")) || 12, index:fd.get("index"), cur:"ARS", last:{date:since, amount}, fixedId:fd.get("fixedId") || null};
+    await saveCfg({rent}); await rentSyncDue(rent); closeSheet(); toast("Contrato guardado");
+  });
+}
+async function rentSyncDue(rent) {
+  const next = rent ? INV.rentNext(rent) : null;
+  if (!next) { if (S.dues.rent_adj) await del("dues/rent_adj").catch(() => {}); return; }
+  await put("dues/rent_adj", {id:"rent_adj", title:"Aumento del alquiler", cat:"casa", due:next, unit:"once", n:1, lead:15, owner:null, note:"", createdBy:meId(), createdAt:S.dues.rent_adj?.createdAt || Date.now(), updatedAt:Date.now()});
 }
 function fechasBody() {
   const ds = allDues();
@@ -3833,6 +3896,17 @@ Object.assign(A, {
   invHolding: t => invHoldingSheet(t.dataset.sym),
   invLogout: () => { iolSave(null); closeSheet(); toast("Desconectado de este celu. Tus números quedan."); render(); },
   search: () => searchSheet(),
+  rentEdit: () => rentSheet(),
+  rentDel: async () => { await saveCfg({rent:null}); await rentSyncDue(null); closeSheet(); toast("Contrato quitado"); },
+  rentApply: async () => { const r = cfg().rent; if (!r) return; const c = INV.rentCalc(r, {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()}); if (!c?.newAmount) return;
+    const rent = {...r, last:{date:c.next, amount:c.newAmount}};
+    await saveCfg({rent}); if (r.fixedId && S.fixed[r.fixedId]) await patch("fixed/" + r.fixedId, {amount:c.newAmount}); await rentSyncDue(rent);
+    toast(`Listo: el alquiler pasa a ${money(c.newAmount, "ARS").replace(/,00$/, "")}`); },
+  errLog: () => errLogSheet(),
+  errCopy: () => { let list = []; try { list = JSON.parse(localStorage.getItem(ERR_KEY) || "[]"); } catch {}
+    const txt = JSON.stringify({app:"Entre Dos", ua:navigator.userAgent.replace(/\(([^)]+)\)/, m => m.split(";").slice(0, 2).join(";") + ")"), pwa:matchMedia("(display-mode: standalone)").matches, online:navigator.onLine, errores:list}, null, 1);
+    try { navigator.clipboard.writeText(txt).then(() => toast("Reporte copiado"), () => showText("Reporte", txt)); } catch { showText("Reporte", txt); } },
+  errClear: () => { try { localStorage.removeItem(ERR_KEY); } catch {} closeSheet(); toast("Registro borrado"); },
   searchItem: t => { const i = S.items[t.dataset.id]; if (!i) return; closeSheet(); S.listId = i.list; store.set("listId", i.list); S.hTab = "listas"; S.view = "hogar"; render(); window.scrollTo({top:0}); },
   searchIdea: () => { closeSheet(); S.hTab = "decidir"; S.view = "hogar"; render(); window.scrollTo({top:0}); },
   searchPrice: () => { closeSheet(); S.hTab = "listas"; S.view = "hogar"; render(); setTimeout(() => [...document.querySelectorAll("section.card h2")].find(h => /Precios/.test(h.textContent))?.scrollIntoView({block:"start"}), 50); },

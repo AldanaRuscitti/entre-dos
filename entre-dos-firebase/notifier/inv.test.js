@@ -145,3 +145,16 @@ test("respaldo: cifra, se descifra igual (también con WebCrypto como la app) y 
   const plain = await subtle.decrypt({name:"AES-GCM", iv:b64(enc.iv)}, key, b64(enc.data));
   assert.deepStrictEqual(JSON.parse(new TextDecoder().decode(plain)), b);
 });
+
+test("alquiler: aumento por ICL y por IPC", () => {
+  const icl = {"2026-01-10":30, "2026-04-10":33, "2026-07-10":36, "2026-10-17":36.9};
+  const r1 = INV.rentCalc({amount:500000, start:"2026-01-10", every:6, index:"ICL"}, {icl, today:"2026-10-18"});
+  assert.equal(r1.next, "2026-07-10"); near(r1.factor, 36 / 30, 1e-9); assert.equal(r1.newAmount, 600000); assert.equal(r1.estimated, false);
+  // aumento futuro: usa el último ICL publicado y lo marca como estimado
+  const r2 = INV.rentCalc({amount:500000, start:"2026-01-10", every:6, index:"ICL", last:{date:"2026-07-10", amount:600000}}, {icl, today:"2026-10-18"});
+  assert.equal(r2.next, "2027-01-10"); assert.equal(r2.estimated, true); assert.equal(r2.newAmount, Math.round(600000 * 36.9 / 36));
+  const ipc = ["01", "02", "03"].map(m => ({fecha:`2026-${m}-28`, valor:2}));
+  const r3 = INV.rentCalc({amount:400000, start:"2026-01-31", every:3, index:"IPC"}, {ipc, today:"2026-04-01"});
+  assert.equal(r3.next, "2026-04-30"); near(r3.factor, Math.pow(1.02, 3), 1e-9); assert.equal(r3.estimated, false);
+  assert.equal(INV.addMonths("2026-01-31", 1), "2026-02-28");
+});
