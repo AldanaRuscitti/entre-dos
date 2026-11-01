@@ -17,7 +17,7 @@
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-messaging-compat.js"></script>
 <script src="firebase-config.js"></script>
-<script src="inversiones-calc.js?v=9590ae5e"></script>
+<script src="inversiones-calc.js?v=dae8887b"></script>
 </head>
 <body>
 <title>Entre Dos</title>
@@ -403,6 +403,7 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .top .icon-btn,.top .eye-btn{flex:none}
 .top .brand{min-width:0;overflow:hidden;white-space:nowrap}
 #mePill{min-width:0}
+.rent-sum{padding:12px;border-radius:14px;background:var(--surface2)}
 .sv-big{font-family:var(--font-display);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
 .sv-row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:14.5px}
 .sv-sub{font-size:12.5px;margin:-2px 0 4px;display:flex;flex-wrap:wrap;gap:4px 10px}
@@ -1659,13 +1660,14 @@ V.inicio = () => {
       todo:() => todoHtml || `<section class="card" style="margin-bottom:16px"><div class="empty" style="padding:14px"><b>Todo al día</b>Están a mano y no hay nada pendiente.</div></section>`,
       checkin:() => checkinCard() ? checkinCard().replace('<section class="card" style="margin-top:12px">', '<section class="card" style="margin-bottom:16px">') : "",
       inversiones:() => invHomeCard(),
+      alquiler:() => rentHomeCard(),
       lista:() => listHtml,
       semana:() => weekHtml}[k.id] || (() => ""))()).join("")}
     <p style="text-align:center;margin:4px 0 0"><button class="linkbtn small" data-act="ajGo" data-p="p-inicio">Personalizar Inicio</button></p>`;
 };
 // Tarjetas de Inicio: cada uno elige cuáles ve y en qué orden (preferencia privada)
 const HOME_CARDS = {todo:{t:"Para hacer", d:"Tus tareas, pagos de la semana, fechas y votaciones"}, gracias:{t:"Gracias", d:"Cuando tu pareja te deja un gracias"}, cierre:{t:"Cierre de mes y novedades", d:"Resumen del mes y lo que cambió desde tu última visita"},
-  checkin:{t:"¿Cómo estamos?", d:"Las 3 preguntas de la semana"}, inversiones:{t:"Mis inversiones", d:"Cómo te fue el último mes (solo vos)"}, lista:{t:"Lista de compras", d:"Para agregar sin salir de Inicio"}, semana:{t:"Próximos 7 días", d:"Eventos y fechas"}};
+  checkin:{t:"¿Cómo estamos?", d:"Las 3 preguntas de la semana"}, inversiones:{t:"Mis inversiones", d:"Cómo te fue el último mes (solo vos)"}, alquiler:{t:"Alquiler", d:"Cuando se acerca un aumento o falta pagar el mes"}, lista:{t:"Lista de compras", d:"Para agregar sin salir de Inicio"}, semana:{t:"Próximos 7 días", d:"Eventos y fechas"}};
 function homeCards() {
   const saved = Array.isArray(prefs().home) ? prefs().home.filter(k => HOME_CARDS[k.id]) : [];
   const ids = saved.map(k => k.id);
@@ -1775,8 +1777,8 @@ V.cuentas = () => {
     <div class="row" style="gap:6px;margin:-6px 0 12px;flex-wrap:nowrap"><div class="filters" style="flex:1;margin:0">${gs.map(x => `<button class="chip" data-act="pickGroup" data-id="${esc(x.id)}" aria-pressed="${x.id === g.id}">${esc(x.name)}</button>`).join("")}</div><button class="icon-btn" data-act="groupMenu" data-id="${esc(g.id)}" aria-label="Opciones del grupo">⋯</button></div>
     <div class="grid g2" style="align-items:start">
       <section class="card"><div class="card-h"><span class="ic b">${UI.scale}</span><h2>Balance</h2>${curs.length ? `<button class="btn sm spacer" data-act="copySummary" data-id="${esc(g.id)}">Copiar resumen</button>` : ""}</div>${balCard}${fxCard(g, bal)}</section>
-      <section class="card"><div class="seg" role="group" aria-label="Sección" style="margin-bottom:12px">${[["mov","Historial"],["resumen","Resumen"],["fijos","Fijos"]].map(([v, l]) => `<label><input type="radio" name="ctab" value="${v}" data-chg="cTab" ${S.cTab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
-        ${S.cTab === "resumen" ? groupSummary(g) : S.cTab === "fijos" ? groupFixed(g) : `
+      <section class="card"><div class="seg" role="group" aria-label="Sección" style="margin-bottom:12px">${[["mov","Historial"],["resumen","Resumen"],["fijos","Fijos"],["alquiler","Alquiler"]].map(([v, l]) => `<label><input type="radio" name="ctab" value="${v}" data-chg="cTab" ${S.cTab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+        ${S.cTab === "resumen" ? groupSummary(g) : S.cTab === "fijos" ? groupFixed(g) : S.cTab === "alquiler" ? rentView() : `
         ${groupExpenses(g.id).length > 15 || q || S.qCat ? `<div class="row" style="margin-bottom:6px"><input class="input" id="expSearch" data-inp="q" placeholder="Buscar" value="${esc(S.q)}" style="flex:1;width:auto;min-width:140px">
         <select class="input" style="width:auto" data-chg="qCat" aria-label="Categoría"><option value="">Todas</option>${c.expCats.map(k => `<option value="${esc(k.id)}" ${S.qCat === k.id ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select></div>` : ""}
         <div class="list">${list || `<div class="empty"><b>Todavía no hay gastos</b>${q || S.qCat ? "Nada coincide con el filtro." : "Cargá el primero con + y la app hace las cuentas."}</div>`}</div>
@@ -2150,9 +2152,9 @@ function groupSummary(g) {
 }
 function groupFixed(g) {
   const ym = todayS().slice(0, 7);
-  const rent = rentCard();
+  const rent = rentRowShort();
   const ts = Object.values(S.fixed).filter(t => t.group === g.id).sort((a, b) => (a.day || 0) - (b.day || 0));
-  return `${rent.replace('style="max-width:760px;margin-bottom:14px"', 'style="margin:0 0 12px;box-shadow:none;border:1px solid var(--line)"')}<p class="small muted" style="margin:0 0 6px">Gastos que se repiten cada mes en ${esc(g.name)}. Estado de ${esc(ymLabel(ym))}.</p>
+  return `${rent ? `<div class="list" style="margin-bottom:10px">${rent}</div>` : ""}<p class="small muted" style="margin:0 0 6px">Gastos que se repiten cada mes en ${esc(g.name)}. Estado de ${esc(ymLabel(ym))}.</p>
     <div class="list">${ts.length ? ts.map(t => fixedRow(t, "fixed", ym)).join("") : `<div class="empty"><b>Sin gastos fijos</b>Alquiler, expensas, servicios: al cargar uno marcá "Se repite cada mes" y cada mes lo cargan con un toque.</div>`}</div>`;
 }
 function summaryText(g) {
@@ -2845,46 +2847,128 @@ function dueRow(d) {
       <div style="margin-top:4px">${dueDateBadge(d)}</div></div>
     ${near ? `<button class="btn sm primary" data-act="doneDue" data-id="${esc(d.id)}" data-scope="${d.scope}">Ya está</button>` : ""}</div>`;
 }
-/* ---------- alquiler: aumento por ICL o IPC ---------- */
+/* ---------- alquiler: contrato, calendario mes a mes y aumentos ---------- */
 function rentLoadIcl() {
   if (S.iclLoading || (S.icl && Date.now() - S.icl.loadedAt < 3600e3) || !DB) return;
   S.iclLoading = true;
   DB.doc("market/icl").get().then(d => { S.icl = {...(d.exists ? d.data() : {}), loadedAt:Date.now()}; }).catch(() => { S.icl = {loadedAt:Date.now()}; }).finally(() => { S.iclLoading = false; render(); });
 }
-function rentCard() {
-  const r = cfg().rent;
-  if (!r) return `<section class="card" style="max-width:760px;margin-bottom:14px"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">🏠</span><span class="small muted" style="flex:1">¿Alquilan? Cargá el contrato y te avisamos antes de cada aumento, con el monto nuevo calculado con el índice oficial.</span><button class="btn sm" data-act="rentEdit">Cargar</button></div></section>`;
+// Contrato guardado (compartido). Convierte el formato viejo {last:{date, amount}} al nuevo con montos confirmados.
+function rentContract() {
+  const r = cfg().rent; if (!r || !r.start || !(Number(r.amount) > 0)) return null;
+  const set = {...(r.set || {})};
+  if (r.last?.date && r.last.date > r.start && r.last.amount) set[r.last.date.slice(0, 7)] = Number(r.last.amount);
+  return {months:36, every:12, index:"ICL", dueDay:10, cur:"ARS", ...r, set};
+}
+function rentPaid(r, sch) {
+  const paid = {...(r.paidManual || {})}; const fx = r.fixedId && S.fixed[r.fixedId];
+  if (fx) for (const row of sch?.rows || []) if (fixedDone(fx, row.ym)) paid[row.ym] = true;
+  return paid;
+}
+function rentData() {
+  const r = rentContract(); if (!r) return null;
   if (r.index === "ICL") rentLoadIcl();
   if (r.index === "IPC" && !INVS.market && !INVS.mkTried3) { INVS.mkTried3 = true; invMarket().then(() => render()).catch(() => {}); }
-  const c = INV.rentCalc(r, {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()});
-  if (!c) return "";
-  const days = daysBetween(todayS(), c.next), cur = r.cur || "ARS";
-  const pct = c.factor ? (c.factor - 1) * 100 : null;
-  const calcTxt = r.index === "none" ? "Sin índice: cargá el monto nuevo cuando te avisen." : c.missing ? (r.index === "ICL" ? "Todavía no tenemos el ICL del BCRA (se actualiza una vez por día)." : "Todavía no tenemos la inflación del INDEC.")
-    : `${c.estimated ? "Estimado" : "Según el índice"}: <b class="money">${esc(money(c.newAmount, cur).replace(/,00$/, ""))}</b> (${pct == null ? "" : (pct >= 0 ? "+" : "") + pct.toLocaleString("es-AR", {maximumFractionDigits:1}) + "%"})${c.estimated ? ` · con el ${r.index} ${r.index === "ICL" ? "al " + esc(shortDate(c.upto)) : "publicado hasta " + esc(MONTHS[Number(String(c.upto || "").slice(5, 7)) - 1] || "")}; puede cambiar un poco` : ""}.`;
-  return `<section class="card" style="max-width:760px;margin-bottom:14px"><div class="card-h"><span class="ic">🏠</span><h2>Alquiler</h2><button class="btn ghost sm spacer" data-act="rentEdit">Editar</button></div>
-    <p style="margin:0">Hoy pagan <b class="money">${esc(money(c.amount, cur).replace(/,00$/, ""))}</b>. Próximo aumento: <b>${esc(DOWL[wdayOf(c.next)])} ${esc(shortDate(c.next))}</b>${days >= 0 ? ` (${days === 0 ? "hoy" : days === 1 ? "mañana" : "en " + days + " días"})` : ` (hace ${-days} días)`} · ajusta por ${r.index === "none" ? "monto fijo" : r.index} cada ${Number(r.every) || 12} meses.</p>
-    <p class="small" style="margin:6px 0 0">${calcTxt}</p>
-    ${days <= 10 && c.newAmount ? `<div class="row" style="margin-top:10px"><button class="btn sm primary" data-act="rentApply">Aplicar el aumento</button><span class="small muted">Actualiza el monto${r.fixedId && S.fixed[r.fixedId] ? " y el gasto fijo" : ""}.</span></div>` : ""}</section>`;
+  const opts = {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()};
+  const s0 = INV.rentSchedule(r, opts); if (!s0) return null;
+  return {r, sch:INV.rentSchedule(r, {...opts, paid:rentPaid(r, s0)})};
+}
+const IDX_L = {ICL:"ICL", IPC:"IPC", pct:"porcentaje fijo", steps:"montos pactados", casapropia:"Casa Propia", none:"sin ajuste"};
+function rentView() {
+  const d = rentData();
+  if (!d) return `<div class="empty"><b>¿Alquilan?</b>Cargá el contrato y te decimos cuánto pagar cada mes, cuándo aumenta y cuánto llevan pagado.<div style="margin-top:12px"><button class="btn primary" data-act="rentEdit">Cargar contrato</button></div></div>`;
+  const {r, sch} = d, cur = r.cur || "ARS", m = v => esc(money(v, cur).replace(/,00$/, "")), t = todayS();
+  const c = sch.cur, nx = sch.nextAdj, days = nx ? daysBetween(t, nx.date) : null;
+  const chip = !c ? "" : c.status === "paid" ? `<span class="badge pos">Pagado</span>` : t > c.due ? `<span class="badge warn">Vencido el ${esc(shortDate(c.due))}</span>` : `<span class="badge mut">Pendiente · vence el ${esc(shortDate(c.due))}</span>`;
+  const ending = daysBetween(t, sch.end);
+  const list = (() => {
+    const rows = sch.rows, idx = rows.findIndex(x => x.ym >= t.slice(0, 7)), from = Math.max(0, (S.rentAll ? 0 : idx < 0 ? rows.length - 3 : idx - 1));
+    return `${from > 0 ? `<button class="linkbtn small" data-act="rentAll">Ver meses anteriores (${from})</button>` : ""}<div class="list">${rows.slice(from).map(x => `${x.adj ? `<div class="month-h">Aumento ${x.chg != null ? (x.chg >= 0 ? "+" : "") + (x.chg * 100).toLocaleString("es-AR", {maximumFractionDigits:1}) + "%" : ""}${x.estimated ? " · estimado" : ""}</div>` : ""}
+      <div class="item ${x.status === "now" || x.status === "overdue" ? "click" : ""}" ${(x.status === "now" || x.status === "overdue") && r.fixedId && S.fixed[r.fixedId] ? `data-act="rentPay" data-ym="${x.ym}"` : ""}><div class="grow"><div class="t" style="text-transform:capitalize">${esc(MONTHS[Number(x.ym.slice(5)) - 1])} ${x.ym.slice(0, 4)}</div><div class="s">vence el ${esc(shortDate(x.due))}</div></div>
+        <div class="amt"><div class="money" style="font-weight:700">${x.estimated ? "≈ " : ""}${m(x.amount)}</div>${x.status === "paid" ? `<span class="badge pos">✓ Pagado</span>` : x.status === "overdue" ? `<button class="badge warn" data-act="rentMark" data-ym="${x.ym}" style="border:0;cursor:pointer">Pendiente · marcar pagado</button>` : x.status === "now" ? `<span class="badge acc">Este mes</span>` : ""}</div></div>`).join("")}</div>`;
+  })();
+  return `<div class="rent-sum">
+      ${c ? `<p style="margin:0;font-size:17px">Este mes pagás <b class="money">${c.estimated ? "≈ " : ""}${m(c.amount)}</b> ${chip}</p>` : sch.rows[0].ym > t.slice(0, 7) ? `<p style="margin:0">El contrato empieza el ${esc(shortDate(r.start))}.</p>` : `<p style="margin:0">El contrato terminó el ${esc(shortDate(sch.end))}.</p>`}
+      ${Number(r.expensas) > 0 ? `<p class="small muted" style="margin:4px 0 0">Con expensas: ${m((c?.amount || 0) + Number(r.expensas))}</p>` : ""}
+      ${nx ? `<p style="margin:8px 0 0">Próximo aumento: <b>${esc(DOWL[wdayOf(nx.date)])} ${esc(shortDate(nx.date))}</b>${days != null ? ` (en ${days} días)` : ""} · ${nx.estimated ? "≈ " : ""}<b class="money">${m(nx.amount)}</b>${nx.chg != null ? ` (${nx.chg >= 0 ? "+" : ""}${(nx.chg * 100).toLocaleString("es-AR", {maximumFractionDigits:1})}%)` : ""}</p>
+        <p class="small muted" style="margin:2px 0 0">${r.index === "casapropia" ? "Casa Propia: cargá el monto cuando te lo pasen." : nx.estimated ? `Estimado con ${IDX_L[r.index]}: todavía no está publicado todo; lo actualizamos solo.` : `Según ${IDX_L[r.index]}.`}</p>` : `<p class="small muted" style="margin:8px 0 0">No hay más aumentos en este contrato.</p>`}
+      <p style="margin:8px 0 0">Ya pagaron <b>${sch.paidN} de ${sch.rows.length}</b> meses · <b class="money">${m(sch.paidTotal)}</b></p>
+      <p class="small muted" style="margin:2px 0 0">Te quedan ${sch.left} meses · termina el ${esc(shortDate(sch.end))} ${sch.end.slice(0, 4)}</p>
+      ${ending <= 60 && ending >= -30 ? `<p class="hint-warn small" style="margin:8px 0 0">El contrato termina el ${esc(shortDate(sch.end))}. ¿Renuevan? <button class="linkbtn" data-act="rentEdit">Cargar contrato nuevo</button></p>` : ""}
+      ${nx && days <= 10 && !nx.estimated && !(r.set || {})[nx.ym] ? `<div class="row" style="margin-top:10px"><button class="btn sm primary" data-act="rentApply" data-ym="${nx.ym}" data-amt="${nx.amount}">Confirmar el aumento</button><span class="small muted">Lo deja fijo${r.fixedId && S.fixed[r.fixedId] ? " y actualiza el gasto fijo" : ""}.</span></div>` : ""}
+    </div>
+    <div class="row" style="margin:14px 0 6px"><b style="flex:1">Mes a mes</b><button class="btn ghost sm" data-act="rentEdit">Editar contrato</button></div>
+    ${list}
+    ${Number(r.deposit) > 0 ? `<p class="small muted" style="margin:10px 0 0">Depósito: ${m(Number(r.deposit))}${r.depositBack !== false ? " · se devuelve al terminar" : ""}</p>` : ""}
+    <p class="small muted" style="margin:8px 0 0">El cálculo es orientativo: revisá lo que dice tu contrato.</p>`;
+}
+// Fila corta para Fijos e Inicio
+function rentRowShort() {
+  const d = rentData(); if (!d) return "";
+  const {sch, r} = d, nx = sch.nextAdj, m = v => esc(money(v, r.cur || "ARS").replace(/,00$/, ""));
+  return `<div class="item click" data-act="rentOpen"><span class="cat-ic" style="--c:var(--accent2)">🏠</span><div class="grow"><div class="t">Alquiler · ${sch.cur ? m(sch.cur.amount) + "/mes" : "contrato"}</div><div class="s">${nx ? `Aumenta el ${esc(shortDate(nx.date))} · ≈ ${m(nx.amount)}` : "Sin más aumentos"}</div></div><span class="muted">›</span></div>`;
+}
+function rentHomeCard() {
+  const d = rentData(); if (!d) return "";
+  const {sch, r} = d, nx = sch.nextAdj, t = todayS(), m = v => esc(money(v, r.cur || "ARS").replace(/,00$/, ""));
+  const soon = nx && daysBetween(t, nx.date) <= 30, unpaid = sch.cur && sch.cur.status !== "paid" && t > sch.cur.due;
+  if (!soon && !unpaid) return "";
+  return `<section class="card click" data-act="rentOpen" style="margin-bottom:16px;cursor:pointer"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">🏠</span><div class="grow"><b>Alquiler</b><div class="small muted">${unpaid ? `Falta pagar el alquiler de ${esc(MONTHS[Number(sch.cur.ym.slice(5)) - 1])} (${m(sch.cur.amount)})` : `Aumenta en ${daysBetween(t, nx.date)} días · ≈ ${m(nx.amount)}`}</div></div><span class="muted">›</span></div></section>`;
+}
+async function rentIndexData() {
+  if (!S.icl?.series && DB) { try { const d = await DB.doc("market/icl").get(); S.icl = {...(d.exists ? d.data() : {}), loadedAt:Date.now()}; } catch {} }
+  try { await invMarket(); } catch {}
+  return {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()};
 }
 function rentSheet() {
-  const r = cfg().rent || {every:12, index:"ICL", cur:"ARS", start:todayS()};
-  const fixedOpts = Object.values(S.fixed).map(f => `<option value="${esc(f.id)}" ${r.fixedId === f.id ? "selected" : ""}>${esc(f.desc || "Gasto fijo")} (${esc(money(f.amount, f.cur).replace(/,00$/, ""))})</option>`).join("");
-  openSheet("Contrato de alquiler", `<div class="frow"><label class="field"><span>Monto que pagan hoy</span><input class="input money" name="amount" inputmode="decimal" value="${esc(amtStr(r.last?.amount || r.amount))}"></label>
-      <label class="field"><span>Último aumento (o inicio del contrato)</span><input class="input" type="date" name="since" value="${esc(r.last?.date || r.start || todayS())}"></label></div>
-    <div class="frow"><label class="field"><span>Ajusta cada</span><select class="input" name="every">${[3, 4, 6, 12].map(n => `<option value="${n}" ${Number(r.every) === n ? "selected" : ""}>${n} meses</option>`).join("")}</select></label>
-      <label class="field"><span>Por</span><select class="input" name="index"><option value="ICL" ${r.index === "ICL" ? "selected" : ""}>ICL (BCRA, contratos 2020–2023)</option><option value="IPC" ${r.index === "IPC" ? "selected" : ""}>IPC (inflación INDEC)</option><option value="none" ${r.index === "none" ? "selected" : ""}>Otro / monto pactado</option></select></label></div>
-    ${fixedOpts ? `<label class="field"><span>Gasto fijo del alquiler (opcional)</span><select class="input" name="fixedId"><option value="">—</option>${fixedOpts}</select><small class="muted">Al aplicar el aumento, se actualiza solo.</small></label>` : ""}
-    <p class="small muted" style="margin:0">Te avisamos 15 días antes, por los avisos de siempre. El cálculo es orientativo: revisá lo que diga tu contrato.</p>
+  rentIndexData().catch(() => {});
+  const isNew = !cfg().rent;
+  const r = rentContract() || {start:todayS(), months:36, every:12, index:"ICL", dueDay:10, cur:"ARS", payer:"group"};
+  const gs = Object.values(S.groups), g0 = S.groups[r.group] || curGroup() || gs[0];
+  const fixed = Object.values(S.fixed).filter(f => !g0 || f.group === g0.id);
+  const hist = Object.entries(r.set || {}).sort();
+  openSheet("Contrato de alquiler", `
+    <div class="frow"><label class="field"><span>Monto inicial del contrato</span><input class="input money" name="amount" inputmode="decimal" value="${esc(amtStr(r.amount))}" placeholder="0,00"></label>
+      <label class="field"><span>Moneda</span><select class="input" name="cur">${["ARS", "USD"].map(x => `<option ${x === (r.cur || "ARS") ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
+    <div class="frow"><label class="field"><span>Inicio del contrato</span><input class="input" type="date" name="start" value="${esc(r.start)}"></label>
+      <label class="field"><span>Duración</span><select class="input" name="months">${[12, 24, 36, 48].map(n => `<option value="${n}" ${Number(r.months) === n ? "selected" : ""}>${n} meses</option>`).join("")}</select></label></div>
+    <div class="frow"><label class="field"><span>Ajusta cada</span><select class="input" name="every">${[1, 2, 3, 4, 6, 12].map(n => `<option value="${n}" ${Number(r.every) === n ? "selected" : ""}>${n === 1 ? "mes" : n + " meses"}</option>`).join("")}</select></label>
+      <label class="field"><span>Por</span><select class="input" name="index">${[["ICL","ICL (BCRA)"],["IPC","IPC (inflación INDEC)"],["casapropia","Casa Propia"],["pct","Porcentaje fijo"],["steps","Montos pactados"],["none","Sin ajuste"]].map(([v, l]) => `<option value="${v}" ${r.index === v ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+    <label class="field" data-ix="pct"><span>% por ajuste</span><input class="input" name="pct" inputmode="decimal" value="${esc(amtStr(r.pct))}" placeholder="10"></label>
+    <label class="field" data-ix="IPC"><span>Qué meses de IPC usa</span><select class="input" name="ipcLag"><option value="auto" ${r.ipcLag !== "period" ? "selected" : ""}>Los últimos publicados al momento del aumento</option><option value="period" ${r.ipcLag === "period" ? "selected" : ""}>Los meses del período</option></select></label>
+    <label class="field" data-ix="steps"><span>Montos pactados (uno por línea: mes y monto)</span><textarea class="input" name="steps" rows="3" placeholder="2026-07 650000&#10;2027-01 800000">${esc((r.steps || []).map(x => `${x.from} ${x.amount}`).join("\n"))}</textarea></label>
+    <label class="field"><span>Vence el día</span><input class="input" type="number" min="1" max="31" name="dueDay" value="${esc(r.dueDay || 10)}" style="max-width:120px"></label>
+    ${gs.length ? `<div class="frow"><label class="field"><span>Grupo</span><select class="input" name="group">${gs.map(x => `<option value="${esc(x.id)}" ${g0 && x.id === g0.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+      <label class="field"><span>Quién lo paga</span><select class="input" name="payer"><option value="group">Entre todos (según el grupo)</option>${peopleList().map(p => `<option value="${esc(p.id)}" ${r.payer === p.id ? "selected" : ""}>Solo ${esc(p.id === meId() ? "vos" : p.name)}</option>`).join("")}</select></label></div>
+    <label class="field"><span>Gasto fijo vinculado</span><select class="input" name="fixedId"><option value="__new" ${!r.fixedId ? "selected" : ""}>Crear uno nuevo "Alquiler"</option>${fixed.map(f => `<option value="${esc(f.id)}" ${r.fixedId === f.id ? "selected" : ""}>${esc(f.desc || "Gasto fijo")}</option>`).join("")}<option value="" ${r.fixedId === "" ? "selected" : ""}>No vincular</option></select><small class="muted">Así sabemos qué meses ya pagaron y te lo recordamos cada mes.</small></label>` : ""}
+    <details class="more"><summary>Más datos (opcional)</summary>
+      <div class="frow"><label class="field"><span>Expensas por mes</span><input class="input money" name="expensas" inputmode="decimal" value="${esc(amtStr(r.expensas))}"></label><label class="field"><span>Depósito</span><input class="input money" name="deposit" inputmode="decimal" value="${esc(amtStr(r.deposit))}"></label></div>
+      <label class="field"><span>Aumentos ya aplicados (mes y monto real, uno por línea)</span><textarea class="input" name="hist" rows="3" placeholder="2026-04 560000">${esc(hist.map(([k, v]) => `${k} ${v}`).join("\n"))}</textarea><small class="muted">Si ya hubo aumentos, cargá el monto real: corrige las estimaciones.</small></label>
+    </details>
+    ${isNew ? `<label class="row small" style="gap:6px"><input type="checkbox" name="pastPaid" checked> Los meses anteriores a este ya están pagados</label>` : ""}
+    <p class="small muted" style="margin:0">Te avisamos 15 días antes de cada aumento. El cálculo es orientativo: revisá lo que dice tu contrato.</p>
     <div class="form-actions"><button class="btn primary" type="submit">Guardar</button>${cfg().rent ? `<button class="btn danger spacer" type="button" data-act="rentDel">Quitar</button>` : ""}</div>`, async fd => {
-    const amount = parseAmt(fd.get("amount") || ""), since = fd.get("since");
-    if (!(amount > 0)) return formErr("Poné el monto que pagan hoy.", "amount"); if (!YMD.test(since || "")) return formErr("Elegí la fecha.", "since");
-    const rent = {amount, start:r.start && r.start < since ? r.start : since, every:Number(fd.get("every")) || 12, index:fd.get("index"), cur:"ARS", last:{date:since, amount}, fixedId:fd.get("fixedId") || null};
+    const amount = parseAmt(fd.get("amount") || ""), start = fd.get("start");
+    if (!(amount > 0)) return formErr("Poné el monto inicial del contrato.", "amount"); if (!YMD.test(start || "")) return formErr("Elegí la fecha de inicio.", "start");
+    const lines = name => String(fd.get(name) || "").split(/\n+/).map(l => l.trim().match(/^(\d{4}-\d{2})\s+\$?\s*([\d.,]+)$/)).filter(Boolean).map(mm => ({from:mm[1], amount:parseAmt(mm[2])})).filter(x => x.amount > 0);
+    const set = {}; for (const x of lines("hist")) set[x.from] = x.amount;
+    const rent = {amount:r2(amount), cur:fd.get("cur") || "ARS", start, months:Number(fd.get("months")) || 36, every:Number(fd.get("every")) || 12, index:fd.get("index"), pct:parseAmt(fd.get("pct") || "") || null, ipcLag:fd.get("ipcLag") || "auto",
+      steps:lines("steps"), dueDay:Math.min(31, Math.max(1, parseInt(fd.get("dueDay"), 10) || 10)), group:fd.get("group") || null, payer:fd.get("payer") || "group",
+      expensas:parseAmt(fd.get("expensas") || "") || null, deposit:parseAmt(fd.get("deposit") || "") || null, set, paidManual:r.paidManual || {}, fixedId:r.fixedId || null};
+    if (rent.index === "pct" && !(rent.pct > 0)) return formErr("Poné el porcentaje de cada ajuste.", "pct");
+    // gasto fijo vinculado: crearlo o actualizar el monto de este mes
+    let fid = fd.get("fixedId"); const g = S.groups[rent.group];
+    const sch = INV.rentSchedule(rent, await rentIndexData()), nowAmt = sch?.cur?.amount || rent.amount;
+    if (fd.get("pastPaid") === "on" && sch) for (const row of sch.rows) if (row.ym < todayS().slice(0, 7)) rent.paidManual[row.ym] = true;
+    if (g && fid === "__new") { fid = newId(); const who = rent.payer !== "group" ? rent.payer : meId(); const members = rent.payer !== "group" ? [rent.payer] : (g.members || []);
+      await put("fixed/" + fid, {id:fid, group:g.id, desc:"Alquiler", amount:nowAmt, cur:rent.cur, cat:"casa", paidBy:who, splitMode:"equal", split:Object.fromEntries(members.map(id => [id, true])), day:rent.dueDay, createdAt:Date.now()}); }
+    else if (fid && S.fixed[fid]) await patch("fixed/" + fid, {amount:nowAmt, day:rent.dueDay});
+    rent.fixedId = fid && fid !== "__new" ? fid : null;
     await saveCfg({rent}); await rentSyncDue(rent); closeSheet(); toast("Contrato guardado");
-  });
+  }, f => { const sync = () => { const v = f.elements["index"].value; f.querySelectorAll("[data-ix]").forEach(el => el.hidden = el.dataset.ix !== v); }; f.elements["index"].addEventListener("change", sync); sync(); });
 }
 async function rentSyncDue(rent) {
-  const next = rent ? INV.rentNext(rent) : null;
+  const sch = rent ? INV.rentSchedule(rent, await rentIndexData()) : null, next = sch?.nextAdj?.date;
   if (!next) { if (S.dues.rent_adj) await del("dues/rent_adj").catch(() => {}); return; }
   await put("dues/rent_adj", {id:"rent_adj", title:"Aumento del alquiler", cat:"casa", due:next, unit:"once", n:1, lead:15, owner:null, note:"", createdBy:meId(), createdAt:S.dues.rent_adj?.createdAt || Date.now(), updatedAt:Date.now()});
 }
@@ -3848,7 +3932,7 @@ function quickAddSheet() {
     qaItem:[UI.list, "#C99A1A", "A una lista", "Compras…"], qaEvent:[UI.cal, "#2E9E6A", "Evento", "A la agenda"],
     qaChore:[SV(AREAS[2].icon), "#0E7A68", "Tarea del hogar", "Se repite y se turnan"], qaDue:[SV('<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>'), "#8E6C0F", "Fecha o vencimiento", "VTV, seguro, cumple…"],
     qaMeal:[SV('<path d="M4 3v8a3 3 0 0 0 6 0V3M7 3v18M17 3c-2 0-3 3-3 6s1 4 3 4v8"/>'), "#A0522D", "Comida", "Al menú de la semana"], qaIdea:[SV('<path d="M12 2l2.6 6.6L21 9l-5 4.4L17.5 21 12 17l-5.5 4 1.5-7.6L3 9l6.4-.4z"/>'), "#6A5ACD", "Idea de plan", "Para hacer juntos"],
-    qaPoll:[UI.scale, "#B54BB0", "Decidir algo", "Votan y ven coincidencias"], qaThanks:[SV('<path d="M20.8 6.6a5 5 0 0 0-8.8-2.1A5 5 0 0 0 3.2 6.6C2 11 12 20 12 20s10-9 8.8-13.4z"/>'), "#B04C32", "Un gracias", "Una nota para tu pareja"]};
+    qaRent:[SV('<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'), "#2F7FB8", "Alquiler", "Cuánto pagan y cuándo aumenta"], qaPoll:[UI.scale, "#B54BB0", "Decidir algo", "Votan y ven coincidencias"], qaThanks:[SV('<path d="M20.8 6.6a5 5 0 0 0-8.8-2.1A5 5 0 0 0 3.2 6.6C2 11 12 20 12 20s10-9 8.8-13.4z"/>'), "#B04C32", "Un gracias", "Una nota para tu pareja"]};
   // Lo de la pantalla en la que estás va primero
   const here = S.view === "cuentas" ? ["qaExpense"] : S.view === "finanzas" ? ["qaTx"] : S.view === "agenda" ? (S.calMode === "fechas" ? ["qaDue", "qaEvent"] : ["qaEvent", "qaDue"]) :
     S.view === "hogar" ? ({listas:["qaItem"], menu:["qaMeal"], decidir:["qaIdea", "qaPoll"], mascotas:["qaDue"]}[S.hTab] || ["qaChore"]) : [];
@@ -4185,10 +4269,15 @@ Object.assign(A, {
   catAdd: () => { const f = $("#sheetForm"); catSync(f); const D = S.catDraft; D.list.push({id:"c_" + newId(), name:"", color:PALETTE[D.list.length % PALETTE.length]}); catMgrSheet(D.type, true); setTimeout(() => { const els = $$('#sheetForm input[name^="name_"]'); els[els.length - 1]?.focus(); }, 60); },
   rentEdit: () => rentSheet(),
   rentDel: async () => { await saveCfg({rent:null}); await rentSyncDue(null); closeSheet(); toast("Contrato quitado"); },
-  rentApply: async () => { const r = cfg().rent; if (!r) return; const c = INV.rentCalc(r, {icl:S.icl?.series || {}, ipc:INVS.market?.ipc || [], today:todayS()}); if (!c?.newAmount) return;
-    const rent = {...r, last:{date:c.next, amount:c.newAmount}};
-    await saveCfg({rent}); if (r.fixedId && S.fixed[r.fixedId]) await patch("fixed/" + r.fixedId, {amount:c.newAmount}); await rentSyncDue(rent);
-    toast(`Listo: el alquiler pasa a ${money(c.newAmount, "ARS").replace(/,00$/, "")}`); },
+  rentApply: async t => { const r = cfg().rent; if (!r) return; const ym = t.dataset.ym, amt = Number(t.dataset.amt); if (!ym || !(amt > 0)) return;
+    const rent = {...r, set:{...(r.set || {}), [ym]:amt}}; delete rent.last; await saveCfg({rent}); if (r.fixedId && S.fixed[r.fixedId] && ym <= todayS().slice(0, 7)) await patch("fixed/" + r.fixedId, {amount:amt}); await rentSyncDue(rent);
+    toast(`Aumento aplicado: ahora pagan ${money(amt, r.cur || "ARS").replace(/,00$/, "")}`); },
+  rentOpen: () => { closeSheet(); S.view = "cuentas"; S.cTab = "alquiler"; store.set("cTab", "alquiler"); const g = cfg().rent?.group; if (g && S.groups[g]) { S.groupId = g; store.set("groupId", g); } render(); window.scrollTo({top:0}); },
+  rentAll: () => { S.rentAll = true; render(); },
+  rentMark: async t => { const r = cfg().rent; if (!r) return; const ym = t.dataset.ym; await saveCfg({rent:{...r, paidManual:{...(r.paidManual || {}), [ym]:true}}}); toast("Marcado como pagado", () => saveCfg({rent:{...cfg().rent, paidManual:{...(cfg().rent.paidManual || {}), [ym]:false}}})); },
+  rentPay: t => { const r = cfg().rent; const fx = r && S.fixed[r.fixedId]; if (!fx) return; const {id, createdAt, day, ...rest} = fx; const ym = t.dataset.ym; const row = rentData()?.sch.rows.find(x => x.ym === ym);
+    expenseSheet(null, {...rest, amount:row ? row.amount : rest.amount, id:"f_" + fx.id + "_" + ym, kind:"expense", fixedId:fx.id, date:monthDay(ym, fx.day)}); },
+  qaRent: () => { closeSheet(); if (cfg().rent) A.rentOpen(); else rentSheet(); },
   errLog: () => errLogSheet(),
   errCopy: () => { let list = []; try { list = JSON.parse(localStorage.getItem(ERR_KEY) || "[]"); } catch {}
     const txt = JSON.stringify({app:"Entre Dos", ua:navigator.userAgent.replace(/\(([^)]+)\)/, m => m.split(";").slice(0, 2).join(";") + ")"), pwa:matchMedia("(display-mode: standalone)").matches, online:navigator.onLine, errores:list}, null, 1);

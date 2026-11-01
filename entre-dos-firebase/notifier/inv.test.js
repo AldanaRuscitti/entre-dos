@@ -158,3 +158,34 @@ test("alquiler: aumento por ICL y por IPC", () => {
   assert.equal(r3.next, "2026-04-30"); near(r3.factor, Math.pow(1.02, 3), 1e-9); assert.equal(r3.estimated, false);
   assert.equal(INV.addMonths("2026-01-31", 1), "2026-02-28");
 });
+
+test("calendario de alquiler: aumentos, confirmados, pagado y estimados", () => {
+  const ipc = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map(m => ({fecha:m + "-28", valor:2}));
+  const r = INV.rentSchedule({start:"2026-01-10", months:24, amount:500000, every:3, index:"IPC", ipcLag:"period", dueDay:10}, {ipc, today:"2026-05-03", paid:{"2026-01":true, "2026-02":true, "2026-03":true}});
+  assert.equal(r.rows.length, 24);
+  assert.equal(r.rows[3].adj, true); assert.equal(r.rows[3].amount, Math.round(500000 * Math.pow(1.02, 3)));
+  assert.equal(r.rows[3].estimated, false);
+  assert.equal(r.cur.ym, "2026-05"); assert.equal(r.cur.status, "now");
+  assert.equal(r.rows[3].status, "overdue", "abril no se marcó pagado");
+  assert.equal(r.paidN, 3); assert.equal(r.paidTotal, 1500000);
+  assert.equal(r.nextAdj.ym, "2026-07"); assert.equal(r.nextAdj.estimated, false, "usa IPC abr–jun publicados");
+  assert.equal(r.rows[9].estimated, true, "más adelante: estimado");
+  // monto confirmado manualmente
+  const r2 = INV.rentSchedule({start:"2026-01-10", months:12, amount:500000, every:3, index:"IPC", set:{"2026-04":540000}}, {ipc, today:"2026-05-03"});
+  assert.equal(r2.rows[3].amount, 540000); assert.equal(r2.rows[4].amount, 540000);
+  // porcentaje fijo
+  const r3 = INV.rentSchedule({start:"2026-01-01", months:12, amount:100000, every:6, index:"pct", pct:20}, {today:"2026-01-05"});
+  assert.equal(r3.rows[6].amount, 120000); assert.equal(r3.end, "2027-01-01");
+});
+
+test("alquiler: IPC con el rezago de publicación y montos escalonados", () => {
+  const ipc = ["2026-01", "2026-02", "2026-03", "2026-04"].map(m => ({fecha:m + "-28", valor:3}));
+  // aumento el 10/4 (antes del 15): usa ene–feb–mar? no: M-2 = feb → ventana dic–feb; dic no está → estimado con el último
+  const r = INV.rentSchedule({start:"2026-01-10", months:6, amount:100000, every:3, index:"IPC"}, {ipc, today:"2026-04-01"});
+  assert.equal(r.rows[3].estimated, true);
+  const r2 = INV.rentSchedule({start:"2026-01-20", months:6, amount:100000, every:3, index:"IPC"}, {ipc, today:"2026-04-01"});
+  assert.equal(r2.rows[3].amount, Math.round(100000 * Math.pow(1.03, 3)), "el 20/4 ya están ene–mar");
+  assert.equal(r2.rows[3].estimated, false);
+  const r3 = INV.rentSchedule({start:"2026-01-01", months:12, amount:100000, every:4, index:"steps", steps:[{from:"2026-05", amount:130000}, {from:"2026-09", amount:160000}]}, {today:"2026-01-02"});
+  assert.deepStrictEqual([r3.rows[0].amount, r3.rows[4].amount, r3.rows[8].amount], [100000, 130000, 160000]);
+});

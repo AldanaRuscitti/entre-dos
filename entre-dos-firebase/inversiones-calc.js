@@ -197,6 +197,54 @@ const INV = (() => {
     }
     return out;
   }
-  return {rentNext, rentCalc, addMonths, normOp, normPos, compute, period, mepFn, ipcMap, priceFn, ymAdd, monthEnd, shift, ccyOf, isFci};
+  // ---------- calendario completo del contrato de alquiler ----------
+  // c = {start, months, amount, every, index:"ICL"|"IPC"|"pct"|"steps"|"casapropia"|"none", pct, ipcLag:"auto"|"period", steps:[{from:"YYYY-MM", amount}], dueDay, set:{"YYYY-MM": monto confirmado}}
+  // paid = {"YYYY-MM": true}. Devuelve una fila por mes con el monto, si aumenta, si es estimado y si ya está pagado.
+  function rentSchedule(c, {icl, ipc, today, paid}) {
+    const start = c.start, months = Math.min(120, Math.max(1, Number(c.months) || 36)), every = Math.max(1, Number(c.every) || 12), base0 = Number(c.amount) || 0;
+    if (!start || !base0) return null;
+    const ds = Object.keys(icl || {}).sort(), iclAt = d => { let v = null; for (const x of ds) { if (x <= d) v = icl[x]; else break; } return v; };
+    const lastIcl = ds[ds.length - 1];
+    // ritmo mensual del ICL en los últimos 6 meses, para estimar lo que todavía no se publicó
+    const iclRate = (() => { if (ds.length < 30) return null; const a = iclAt(shift(lastIcl, -182)), b = icl[lastIcl]; return a && b ? Math.pow(b / a, 1 / 6) - 1 : null; })();
+    const im = ipcMap(ipc), known = Object.keys(im).sort(), lastIpc = known.length ? im[known[known.length - 1]] : null;
+    const set = c.set || {}, rows = [];
+    let amount = base0, prevAdj = start, estimated = false;
+    for (let k = 0; k < months; k++) {
+      const date = addMonths(start, k), ym = date.slice(0, 7);
+      let adj = false, chg = null;
+      if (k > 0 && k % every === 0) {
+        adj = true; const prev = amount;
+        if (set[ym] > 0) { amount = Number(set[ym]); estimated = false; }
+        else {
+          let f = 1, est = false;
+          if (c.index === "ICL") {
+            const v0 = iclAt(prevAdj); let v1 = date <= lastIcl ? iclAt(date) : null;
+            if (v0 && v1) f = v1 / v0;
+            else if (v0 && lastIcl && iclRate != null) { const mo = (Date.parse(date) - Date.parse(lastIcl)) / 864e5 / 30.44; f = (icl[lastIcl] / v0) * Math.pow(1 + iclRate, Math.max(0, mo)); est = true; }
+            else est = true;
+          } else if (c.index === "IPC") {
+            // Por defecto se usan los últimos meses publicados al momento del aumento (el INDEC publica el mes anterior a mitad de mes)
+            let endM = ymAdd(ym, -1), startM = prevAdj.slice(0, 7);
+            if (c.ipcLag !== "period") { endM = ymAdd(ym, Number(date.slice(8)) >= 15 ? -1 : -2); startM = ymAdd(endM, -(every - 1)); }
+            for (let m = startM; m <= endM; m = ymAdd(m, 1)) { if (im[m] != null) f *= 1 + im[m]; else { f *= 1 + (lastIpc ?? 0); est = true; } }
+          } else if (c.index === "pct") f = 1 + (Number(c.pct) || 0) / 100;
+          else if (c.index === "casapropia") est = true;
+          if (c.index === "steps") { const st = (c.steps || []).filter(x => x && x.from <= ym && Number(x.amount) > 0).sort((a, b) => a.from < b.from ? -1 : 1).pop(); if (st) amount = Number(st.amount); }
+          else amount = Math.round(amount * f);
+          estimated = estimated || est;
+        }
+        chg = prev ? amount / prev - 1 : null; prevAdj = date;
+      }
+      const due = monthEnd(ym) < date ? date : `${ym}-${pad(Math.min(Number(c.dueDay) || 10, +monthEnd(ym).slice(8)))}`;
+      const st = paid && paid[ym] ? "paid" : ym < today.slice(0, 7) ? "overdue" : ym === today.slice(0, 7) ? "now" : "future";
+      rows.push({k, ym, date, due, amount, adj, chg, estimated:estimated && !(set[ym] > 0), status:st});
+    }
+    const cur = rows.find(r => r.ym === today.slice(0, 7)) || null;
+    const nextAdj = rows.find(r => r.adj && r.ym > today.slice(0, 7)) || null;
+    const paidRows = rows.filter(r => r.status === "paid");
+    return {rows, cur, nextAdj, paidN:paidRows.length, paidTotal:paidRows.reduce((a, r) => a + r.amount, 0), left:rows.filter(r => r.ym > today.slice(0, 7)).length, end:addMonths(start, months), unpaidPast:rows.filter(r => r.status === "overdue").length};
+  }
+  return {rentSchedule, rentNext, rentCalc, addMonths, normOp, normPos, compute, period, mepFn, ipcMap, priceFn, ymAdd, monthEnd, shift, ccyOf, isFci};
 })();
 if (typeof module !== "undefined") module.exports = INV;
