@@ -212,7 +212,8 @@ function budgetAlerts(L, shared, user, day, sent = {}) {
   const ym = day.slice(0, 7), keep = Object.fromEntries(Object.entries(sent || {}).filter(([k]) => k.startsWith(ym + "|")));
   const me = useUser(L, shared, user, day);
   if (!me) return {msgs:[], sent:keep};
-  const S = L.S, budgets = (user.settings && user.settings.budgets) || {}, cats = expCats(L), spent = {}, msgs = [];
+  const own = user.settings && user.settings.cats && Array.isArray(user.settings.cats.exp) && user.settings.cats.exp.length ? user.settings.cats.exp : null;
+  const S = L.S, budgets = (user.settings && user.settings.budgets) || {}, cats = own ? [...own, ...expCats(L)] : expCats(L), spent = {}, msgs = [];
   const add = (cur, cat, v) => { const k = cur + ":" + cat; spent[k] = (spent[k] || 0) + v; };
   // igual que la app (Finanzas → Por categoría): tus gastos personales + tu parte de los compartidos
   for (const t of Object.values(S.priv.tx || {})) if (t.type === "gasto" && (t.date || "").startsWith(ym)) add(t.cur, t.cat, Number(t.amount) || 0);
@@ -319,7 +320,8 @@ function parseYo(L, args, {uid, day, nowMs = Date.now(), id = newId(nowMs), sett
   let toks = a.rest, cur = null;
   if (toks.length && CUR_WORDS[norm(toks[toks.length - 1])]) { cur = CUR_WORDS[norm(toks[toks.length - 1])]; toks = toks.slice(0, -1); }
   if (toks.length && CUR_WORDS[norm(toks[0])]) { cur = CUR_WORDS[norm(toks[0])]; toks = toks.slice(1); }
-  const desc = cap(toks.join(" ").trim()).slice(0, 80), cats = expCats(L);
+  const ownC = settings.cats && Array.isArray(settings.cats.exp) ? settings.cats.exp.filter(k => k && k.id && !k.hidden) : [];
+  const desc = cap(toks.join(" ").trim()).slice(0, 80), cats = ownC.length ? ownC : expCats(L);
   const cat = guess(L, desc, cats);
   const doc = plain({id, kind:"tx", type:"gasto", desc, amount:a.amount, cur:cur || (L.CURS.includes(settings.cur) ? settings.cur : "ARS"), date:day, cat, createdAt:nowMs, source:"telegram"});
   const cn = L.catOf(cats, cat).name;
