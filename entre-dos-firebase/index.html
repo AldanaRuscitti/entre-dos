@@ -403,6 +403,12 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .top .icon-btn,.top .eye-btn{flex:none}
 .top .brand{min-width:0;overflow:hidden;white-space:nowrap}
 #mePill{min-width:0}
+.sv-big{font-family:var(--font-display);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:2px}
+.sv-row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:14.5px}
+.sv-sub{font-size:12.5px;margin:-2px 0 4px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.sv-plan{color:var(--muted)}
+.sv-goal{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.sv-goal input[type=range]{width:100%}
 .acc-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -4px;padding:0 4px 2px}
 .acc-chips::-webkit-scrollbar{display:none}
 .acc-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:120px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:var(--surface2);color:inherit;font:inherit;cursor:pointer;text-align:left}
@@ -1831,7 +1837,7 @@ V.finanzas = () => {
       <div class="card stat"><span class="si" style="--c:var(--pos)">${UI.up}</span><div class="eyebrow">Ingresos</div><div class="big money">${esc(money(inc, cur))}</div></div>
       <div class="card stat"><span class="si" style="--c:var(--accent)">${UI.down}</span><div class="eyebrow">Gastos propios</div><div class="big money">${esc(money(own, cur))}</div></div>
       <div class="card stat"><span class="si" style="--c:var(--accent2)">${UI.share}</span><div class="eyebrow">Tu parte compartida</div><div class="big money">${esc(money(shared, cur))}</div><div class="small muted">Lo que te corresponde, no lo que pagaste</div></div>
-      <div class="card stat"><span class="si" style="--c:var(--ink)">${UI.wallet}</span><div class="eyebrow">Te queda</div><div class="big money ${net < 0 ? "pill-neg" : ""}">${esc(money(net, cur))}</div>${inc > 0 ? `<div class="small ${net < 0 ? "pill-neg" : "muted"}">${net >= 0 ? "Ahorrás el " + Math.round(net / inc * 100) + "% de lo que entra" : "Gastás más de lo que entra"}</div>` : ""}</div>
+      <div class="card stat"><span class="si" style="--c:var(--ink)">${UI.wallet}</span><div class="eyebrow">Balance del mes</div><div class="big money ${net < 0 ? "pill-neg" : ""}">${esc(money(net, cur))}</div>${inc > 0 ? `<div class="small ${net < 0 ? "pill-neg" : "muted"}">${net >= 0 ? "Ingresos menos todo lo anotado (con tarjeta incluida)" : "Anotaste más gastos que ingresos"}</div>` : ""}</div>
     </div>
 ${otherTxt}
     <div class="grid g2" style="align-items:start">
@@ -3235,7 +3241,15 @@ function stmtTotal(card, ymS) {
   const real = o && (Number(o.ARS) > 0 || Number(o.USD) > 0);
   return {ARS:real ? Number(o.ARS) || 0 : sums.ARS || 0, USD:real ? Number(o.USD) || 0 : sums.USD || 0, real, logged:sums, paid:o?.paid && S.priv.tx[o.paid] ? o.paid : null};
 }
-function cardStatements(card) { const first = stmtYm(todayS(), card.close); return [ymAdd(first, -1), first, ymAdd(first, 1)].map(m => ({m, ...stmtTotal(card, m)})); }
+// Fecha de vencimiento (o de cierre si no cargaste el vencimiento) del resumen que cierra en ymClose
+const stmtDueDate = (card, ymClose) => card.due ? monthDay(stmtDueYm(card, ymClose), card.due) : monthDay(ymClose, card.close || 31);
+// Resúmenes para mostrar, ordenados por vencimiento: el que hay que pagar primero y los siguientes
+function cardStatements(card) {
+  const first = stmtYm(todayS(), card.close), lim = ymdShift(todayS(), -12);
+  return [-2, -1, 0, 1].map(k => ymAdd(first, k)).map(m => ({m, due:stmtDueDate(card, m), ...stmtTotal(card, m)}))
+    .filter(x => x.due >= lim || (x.ARS + x.USD > 0 && !x.paid && x.due >= ymdShift(todayS(), -40))).slice(0, 3);
+}
+const dueLabel = d => `vence ${Number(d.slice(8))} ${MON_S[Number(d.slice(5, 7)) - 1]}`;
 function cardDues(days) {
   const t = todayS(), lim = ymdShift(t, days), ym = t.slice(0, 7), out = [];
   for (const c of pmList().filter(x => x.kind === "credito")) {
@@ -3285,7 +3299,7 @@ function stmtSheet(cardId, ymS) {
   const c = pmList().find(x => x.id === cardId); if (!c) return;
   const st = stmtTotal(c, ymS), o = (prefs().stmts || {})[c.id + ":" + ymS] || {};
   const dueYm = stmtDueYm(c, ymS), dueD = c.due ? monthDay(dueYm, c.due) : null, accs = pmList().filter(a => PM_KINDS[a.kind]?.acc);
-  openSheet(`${c.name} · resumen de ${MONTHS[Number(ymS.slice(5)) - 1]}`, `
+  openSheet(`${c.name} · resumen que ${c.due ? dueLabel(stmtDueDate(c, ymS)) : "cierra el " + shortDate(stmtDueDate(c, ymS))}`, `
     <p class="small muted" style="margin:0">Cierra el ${esc(shortDate(monthDay(ymS, c.close || 31)))}${dueD ? ` y vence el ${esc(shortDate(dueD))}` : ""}. Lo que cargaste con esta tarjeta: <b>${esc(money(st.logged.ARS || 0, "ARS"))}</b>${st.logged.USD ? ` + <b>${esc(money(st.logged.USD, "USD"))}</b>` : ""}.</p>
     <div class="frow"><label class="field"><span>¿Cuánto te viene en pesos?</span><input class="input money" name="ars" inputmode="decimal" value="${esc(amtStr(o.ARS || ""))}" placeholder="${esc(amtStr(st.logged.ARS || 0))}"></label>
       <label class="field"><span>En dólares</span><input class="input money" name="usd" inputmode="decimal" value="${esc(amtStr(o.USD || ""))}" placeholder="${esc(amtStr(st.logged.USD || 0))}"></label></div>
@@ -3322,7 +3336,7 @@ function myAccountsHtml() {
   const list = pmList(), accs = list.filter(a => PM_KINDS[a.kind]?.acc), cards = list.filter(a => a.kind === "credito");
   if (!list.length) return `<section class="card" style="margin-bottom:14px"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">💳</span><span class="small muted" style="flex:1">Sumá tu efectivo, cuentas y tarjetas para ver saldos, cuánto te viene de cada tarjeta y cuánto podés ahorrar.</span><button class="btn sm" data-act="ajGo" data-p="p-fin">Configurar</button></div></section>`;
   const chips = [...accs.map(a => `<button class="acc-chip" data-act="pmEdit" data-id="${esc(a.id)}"><small>${PM_KINDS[a.kind].i} ${esc(a.name)}</small><b class="money">${esc(money(accountBalance(a), a.cur || "ARS").replace(/,00$/, ""))}</b></button>`),
-    ...cards.map(c => { const nx = cardStatements(c)[1]; return `<button class="acc-chip" data-act="stmtEdit" data-id="${esc(c.id)}" data-ym="${nx.m}"><small>💳 ${esc(c.name)} · ${esc(MON_S[Number(nx.m.slice(5)) - 1])}</small><b class="money">${esc(money(nx.ARS, "ARS").replace(/,00$/, ""))}</b><i>${nx.paid ? "Pagado" : nx.real ? "Real" : "Estimado"}</i></button>`; })].join("");
+    ...cards.map(c => { const sts = cardStatements(c), nx = sts.find(x => !x.paid && x.due >= todayS()) || sts[sts.length - 1]; return `<button class="acc-chip" data-act="stmtEdit" data-id="${esc(c.id)}" data-ym="${nx.m}"><small>💳 ${esc(c.name)} · ${esc(c.due ? dueLabel(nx.due) : "cierra " + shortDate(nx.due))}</small><b class="money">${esc(money(nx.ARS, "ARS").replace(/,00$/, ""))}</b><i>${nx.paid ? "Pagado" : nx.real ? "Real" : "Estimado"}</i></button>`; })].join("");
   return `<section class="card" style="margin-bottom:14px;padding-block:12px"><div class="row" style="margin-bottom:8px"><b style="flex:1">Mis cuentas</b><button class="linkbtn small" data-act="ajGo" data-p="p-fin">Gestionar ›</button></div><div class="acc-chips">${chips}</div></section>`;
 }
 function walletsHtml(cur) {
@@ -3330,11 +3344,11 @@ function walletsHtml(cur) {
   const accRows = accs.map(a => `<div class="item click" data-act="pmEdit" data-id="${esc(a.id)}"><span class="cat-ic" style="--c:var(--accent)">${PM_KINDS[a.kind].i}</span><div class="grow"><div class="t">${esc(a.name)}</div><div class="s">${esc(PM_KINDS[a.kind].l)} · ${esc(a.cur || "ARS")}</div></div><div class="amt money" style="font-weight:700">${esc(money(accountBalance(a), a.cur || "ARS"))}</div></div>`).join("");
   const cardRows = cards.map(c => { const sts = cardStatements(c);
     return `<div class="item" style="flex-wrap:wrap"><span class="cat-ic" style="--c:var(--accent2)">💳</span><div class="grow" style="min-width:0"><div class="t">${esc(c.name)} <button class="linkbtn small" data-act="pmEdit" data-id="${esc(c.id)}">editar</button></div><div class="s">Cierra el ${esc(c.close || 31)}${c.due ? ` · vence el ${esc(c.due)}` : " · sin día de vencimiento"}</div></div>
-      <div class="stmt-row">${sts.map(x => `<button class="stmt" data-act="stmtEdit" data-id="${esc(c.id)}" data-ym="${x.m}"><small>${esc(MONTHS[Number(x.m.slice(5)) - 1])}</small><b class="money">${esc(money(x.ARS, "ARS").replace(/,00$/, ""))}</b>${x.USD ? `<small class="money">+ ${esc(money(x.USD, "USD"))}</small>` : ""}<i class="${x.paid ? "pos" : x.real ? "acc" : "mut"}">${x.paid ? "Pagado" : x.real ? "Real" : "Estimado"}</i></button>`).join("")}</div></div>`; }).join("");
+      <div class="stmt-row">${sts.map(x => `<button class="stmt" data-act="stmtEdit" data-id="${esc(c.id)}" data-ym="${x.m}"><small>${esc(c.due ? dueLabel(x.due) : "cierra " + shortDate(x.due))}</small><b class="money">${esc(money(x.ARS, "ARS").replace(/,00$/, ""))}</b>${x.USD ? `<small class="money">+ ${esc(money(x.USD, "USD"))}</small>` : ""}<i class="${x.paid ? "pos" : x.real ? "acc" : "mut"}">${x.paid ? "Pagado" : x.real ? "Real" : "Estimado"}</i></button>`).join("")}</div></div>`; }).join("");
   const otherRows = others.map(o => `<div class="item click" data-act="pmEdit" data-id="${esc(o.id)}"><span class="cat-ic" style="--c:var(--muted)">${PM_KINDS[o.kind].i}</span><div class="grow"><div class="t">${esc(o.name)}</div><div class="s">${esc(PM_KINDS[o.kind].l)}${o.account ? " · de " + esc(list.find(a => a.id === o.account)?.name || "—") : ""}</div></div><span class="muted">›</span></div>`).join("");
   return `<section class="card"><div class="card-h"><span class="ic">${UI.wallet}</span><h2>Medios de pago</h2></div>
     ${accRows ? `<div class="month-h">Cuentas y efectivo</div><div class="list">${accRows}</div>` : ""}
-    ${cardRows ? `<div class="month-h">Tarjetas de crédito · tocá un mes para poner cuánto te viene</div><div class="list">${cardRows}</div>` : ""}
+    ${cardRows ? `<div class="month-h">Tarjetas de crédito · tocá un resumen para poner cuánto te viene</div><div class="list">${cardRows}</div>` : ""}
     ${otherRows ? `<div class="month-h">Débito y transferencias</div><div class="list">${otherRows}</div>` : ""}
     ${!list.length ? `<p class="small muted" style="margin:0 0 8px">Sumá tu efectivo, cuentas, Mercado Pago y tarjetas: ves los saldos, cuánto te viene de cada tarjeta y cuánto podés ahorrar.</p>` : ""}
     <div class="row" style="margin-top:8px;gap:6px"><button class="btn sm" data-act="pmNew">+ Medio de pago</button>${accs.length > 1 ? `<button class="btn sm" data-act="pmTransfer">↔ Pasar entre cuentas</button>` : ""}</div></section>`;
@@ -3342,39 +3356,35 @@ function walletsHtml(cur) {
 function projectionHtml() { return ""; }
 // ¿Cuánto puedo ahorrar este mes? Plata que entra − lo que sale de verdad este mes (gastos del día a día al ritmo actual, fijos que faltan y resúmenes de tarjeta que vencen).
 function savingsHtml(cur, ym) {
-  const me = meId(), its = monthItems(ym, cur), now = todayS().slice(0, 7);
-  const inc = its.filter(i => i.type === "ingreso").reduce((a, i) => a + i.amount, 0);
+  const me = meId(), its = monthItems(ym, cur), now = todayS().slice(0, 7), past = ym < now;
   const isCard = i => i.src === "personal" ? isCredit(i.ref.payWith) : i.ref.paidBy === me && isCredit(i.ref.payWith);
-  const out = its.filter(i => i.type === "gasto" && !isCard(i));
-  const spent = out.reduce((a, i) => a + i.amount, 0), varSpent = out.filter(i => !(i.ref.tplId || i.ref.fixedId || i.ref.cuota)).reduce((a, i) => a + i.amount, 0);
+  const inc = its.filter(i => i.type === "ingreso").reduce((a, i) => a + i.amount, 0);
+  const spent = its.filter(i => i.type === "gasto" && !isCard(i)).reduce((a, i) => a + i.amount, 0);
   let pendI = 0, pendG = 0;
-  if (ym >= now) { myTpl().filter(t => !tplDone(t, ym) && t.cur === cur).forEach(t => { if (t.type === "ingreso") pendI += t.amount; else pendG += t.amount; });
+  if (!past) { myTpl().filter(t => !tplDone(t, ym) && t.cur === cur).forEach(t => { if (t.type === "ingreso") pendI += t.amount; else pendG += t.amount; });
     myFixed().filter(t => !fixedDone(t, ym) && t.cur === cur).forEach(t => { pendG += shares({amount:t.amount, splitMode:t.splitMode, split:t.split})[me] || 0; }); }
-  const cards = pmList().filter(c => c.kind === "credito").map(c => { const closeYm = stmtDueYm(c, ym) === ym ? ym : ymAdd(ym, -1); const st = stmtTotal(c, closeYm); return {c, closeYm, amt:st[cur] || 0, real:st.real, paid:st.paid}; }).filter(x => x.amt > 0);
+  const plans = (prefs().planned || []).filter(x => x.ym === ym && x.cur === cur);
+  const planG = plans.filter(x => x.type !== "ingreso").reduce((a, x) => a + x.amount, 0), planI = plans.filter(x => x.type === "ingreso").reduce((a, x) => a + x.amount, 0);
+  const cards = pmList().filter(c => c.kind === "credito").map(c => { const closeYm = stmtDueYm(c, ym) === ym ? ym : ymAdd(ym, -1); const st = stmtTotal(c, closeYm); return {c, closeYm, amt:st[cur] || 0, real:st.real, paid:st.paid}; }).filter(x => x.amt > 0 || (!past && x.c.due));
   const cardsTot = cards.reduce((a, x) => a + x.amt, 0);
-  const dim = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate(), day = ym === now ? Number(todayS().slice(8)) : ym < now ? dim : 0;
-  // Al principio del mes el ritmo diario engaña: mezclamos con el promedio de los 3 meses anteriores y le damos más peso al ritmo a medida que pasan los días.
-  const varOf = m => monthItems(m, cur).filter(i => i.type === "gasto" && !isCard(i) && !(i.ref.tplId || i.ref.fixedId || i.ref.cuota)).reduce((a, i) => a + i.amount, 0);
-  const hist = [1, 2, 3].map(k => varOf(ymAdd(ym, -k))).filter(v => v > 0), avg3 = hist.length ? hist.reduce((a, v) => a + v, 0) / hist.length : 0;
-  const pace = varSpent / Math.max(1, day) * dim, w = Math.min(1, day / 15);
-  const early = ym === now && !avg3 && day < 7;
-  const varProj = ym !== now ? varSpent : avg3 ? Math.max(varSpent, w * pace + (1 - w) * avg3) : early ? varSpent : pace;
-  const income = r2(inc + pendI), outTot = r2(spent - varSpent + varProj + pendG + cardsTot), left = r2(income - outTot);
-  if (!income && !outTot) return "";
-  const goal = Number((prefs().saveGoal || {})[ym + ":" + cur]) || 0, daysLeft = Math.max(1, dim - day + 1);
-  const perDay = ym === now ? r2((income - (spent - varSpent) - varSpent - pendG - cardsTot - goal) / daysLeft) : null;
-  const row = (l, v, cls = "") => `<div class="sum-row"><span>${l}</span><b class="money ${cls}">${esc(money(v, cur).replace(/,00$/, ""))}</b></div>`;
-  const past = ym < now;
-  return `<section class="card" style="margin-bottom:14px"><div class="card-h"><span class="ic">${UI.up}</span><h2>${past ? "Cómo cerró el mes" : "¿Cuánto podés ahorrar?"}</h2></div>
-    ${row(past ? "Entró" : "Entra (cobrado + lo que falta cobrar)", income)}
-    ${row(past ? "Gastos del día a día y fijos" : "Gastos del día a día al ritmo actual + fijos que faltan", spent - varSpent + varProj + pendG)}
-    ${cards.length ? row("Tarjetas que vencen este mes", cardsTot) + `<div class="small muted" style="margin:-2px 0 6px">${cards.map(x => `${esc(x.c.name)}: ${esc(money(x.amt, cur).replace(/,00$/, ""))} ${x.paid ? "✅" : x.real ? "(real)" : `<button class="linkbtn" data-act="stmtEdit" data-id="${esc(x.c.id)}" data-ym="${x.closeYm}">(estimado: poné el real)</button>`}`).join(" · ")}</div>` : pmList().some(c => c.kind === "credito") ? "" : `<div class="small muted" style="margin:-2px 0 6px">¿Pagás con tarjeta de crédito? <button class="linkbtn" data-act="ajGo" data-p="p-fin">Sumala</button> y poné cuánto te viene.</div>`}
-    <div class="sum-row" style="border-top:1px solid var(--line);padding-top:8px"><span><b>${past ? "Te quedó" : "Te quedaría para ahorrar"}</b></span><b class="money ${left < 0 ? "pill-neg" : "pill-pos"}" style="font-size:18px">≈ ${esc(money(left, cur).replace(/,00$/, ""))}</b></div>
-    ${income > 0 ? `<p class="small muted" style="margin:4px 0 0">${left >= 0 ? `Sería el ${Math.round(left / income * 100)}% de lo que entra.` : "Este mes sale más de lo que entra."}</p>` : ""}
-    ${ym === now && left > 0 ? `<div class="field" style="margin-top:10px"><span>Quiero ahorrar <b class="money" data-goalv>${esc(money(goal, cur).replace(/,00$/, ""))}</b> este mes</span>
+  const income = r2(inc + pendI + planI), left = r2(income - spent - pendG - planG - cardsTot);
+  if (!income && !spent && !cardsTot && !plans.length && past) return "";
+  const m = v => esc(money(v, cur).replace(/,00$/, ""));
+  const row = (l, v, extra = "") => `<div class="sv-row"><span>${l}</span><b class="money">${v}</b></div>${extra}`;
+  const dim = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate(), daysLeft = ym === now ? dim - Number(todayS().slice(8)) + 1 : dim;
+  const goal = Number((prefs().saveGoal || {})[ym + ":" + cur]) || 0, perDay = r2((left - goal) / Math.max(1, daysLeft));
+  return `<section class="card sv" style="margin-bottom:14px">
+    <div class="row" style="flex-wrap:nowrap"><b style="flex:1">${past ? "Cómo cerró " : "Para ahorrar en "}${esc(MONTHS[Number(ym.slice(5)) - 1])}</b><button class="icon-btn" data-act="svHow" aria-label="Cómo se calcula">ⓘ</button></div>
+    <div class="sv-big money ${left < 0 ? "pill-neg" : "pill-pos"}">${left < 0 ? "−" : ""}${m(Math.abs(left))}</div>
+    <div class="small muted" style="margin:-2px 0 8px">${income > 0 ? (left >= 0 ? `${Math.round(left / income * 100)}% de lo que entra` : "Sale más de lo que entra") : past ? "" : "Cargá tus ingresos del mes"}</div>
+    ${row(`Entra${pendI || planI ? ` <span class="muted small">(${m(inc)} cobrado)</span>` : ""}`, m(income))}
+    ${row("Ya gastaste", "−" + m(spent))}
+    ${pendG ? row("Fijos que faltan", "−" + m(pendG)) : ""}
+    ${cards.length ? row("Tarjetas que vencen", "−" + m(cardsTot), `<div class="sv-sub">${cards.map(x => `<button class="linkbtn" data-act="stmtEdit" data-id="${esc(x.c.id)}" data-ym="${x.closeYm}">${esc(x.c.name)} ${x.amt ? m(x.amt) : "· poné el monto"}${x.paid ? " ✅" : x.real || !x.amt ? "" : " (estim.)"}</button>`).join(" · ")}</div>`) : ""}
+    ${!past ? row(`Previstos${plans.length ? "" : ` <span class="muted small">(lo que sabés que va a venir)</span>`}`, planG || planI ? (planI && !planG ? "+" + m(planI) : "−" + m(planG)) : "—", `<div class="sv-sub">${plans.map(x => `<span class="sv-plan">${esc(x.desc)} ${x.type === "ingreso" ? "+" : ""}${m(x.amount)} <button class="linkbtn" data-act="planDone" data-id="${esc(x.id)}">ya pasó</button> <button class="linkbtn muted" data-act="planDel" data-id="${esc(x.id)}" aria-label="Quitar">×</button></span>`).join("")}<button class="linkbtn" data-act="planNew" data-ym="${ym}" data-cur="${cur}">+ Agregar previsto</button></div>`) : ""}
+    ${!past && left > 0 ? `<div class="sv-goal"><label class="small" style="display:block">Meta: ahorrar <b class="money" data-goalv>${m(goal)}</b></label>
       <input type="range" min="0" max="${Math.max(0, Math.round(left))}" step="${Math.max(100, Math.round(left / 100 / 100) * 100)}" value="${Math.min(goal, Math.round(left))}" data-chg="saveGoal" data-key="${ym}:${cur}" data-cur="${cur}" aria-label="Cuánto querés ahorrar">
-      ${perDay != null ? `<small class="${perDay < 0 ? "pill-neg" : "muted"}">${perDay >= 0 ? `Para lograrlo, te quedan ≈ <b class="money">${esc(money(perDay, cur).replace(/,00$/, ""))}</b> por día para gastos del día a día (${daysLeft} días).` : "Con ese ahorro no te alcanza: bajá la meta o recortá gastos."}</small>` : ""}</div>` : ""}
-    <p class="small muted" style="margin:8px 0 0">${early ? "Todavía es temprano en el mes: el día a día cuenta solo lo cargado hasta hoy. " : ym === now && avg3 && day < 15 ? "El día a día mezcla tu ritmo de este mes con el promedio de los últimos meses. " : ""}Las compras con crédito se cuentan cuando vence el resumen, no cuando comprás.</p></section>`;
+      <div class="small ${perDay < 0 ? "pill-neg" : "muted"}">${perDay >= 0 ? `Podés gastar ≈ <b class="money">${m(perDay)}</b> por día hasta fin de mes` : "No te alcanza: bajá la meta"}</div></div>` : ""}</section>`;
 }
 
 /* ---------- sheets (forms) ---------- */
@@ -3716,6 +3726,16 @@ function quickCatSheet(type, done) {
     await savePrefs({cats}); S.childResult = id; closeSheet(); toast(`Categoría "${name}" creada`);
   });
 }
+function planSheet(ym, cur) {
+  openSheet("Previsto para este mes", `<div class="seg"><label><input type="radio" name="type" value="gasto" checked><span>Gasto</span></label><label><input type="radio" name="type" value="ingreso"><span>Ingreso</span></label></div>
+    <label class="field"><span>Qué</span><input class="input" name="desc" maxlength="60" placeholder="Regalo de cumple, service del auto, aguinaldo…"></label>
+    <label class="field"><span>Monto aproximado (${esc(cur)})</span><input class="input money" name="amount" inputmode="decimal" placeholder="0,00"></label>
+    <p class="small muted" style="margin:0">Se descuenta (o se suma) en "Para ahorrar" hasta que pase. Cuando pase, tocá "ya pasó" y lo cargás de verdad.</p>
+    <div class="form-actions"><button class="btn primary" type="submit">Agregar</button></div>`, async fd => {
+    const desc = (fd.get("desc") || "").trim(), amount = parseAmt(fd.get("amount") || ""); if (!desc) return formErr("Escribí qué es.", "desc"); if (!(amount > 0)) return formErr("Poné el monto.", "amount");
+    await savePrefs({planned:[...(prefs().planned || []).filter(x => x.ym >= ymAdd(todayS().slice(0, 7), -2)), {id:newId(), ym, cur, type:fd.get("type"), desc, amount:r2(amount)}]}); closeSheet(); toast("Agregado");
+  });
+}
 function txSheet(tx, preset) {
   const isNew = !tx; const c = cfg();
   const t = tx || {id:newId(), type:"gasto", cur:S.finCur || prefs().cur, date:todayS(), cat:visCats("exp")[0].id, ...(preset || {})};
@@ -3753,6 +3773,7 @@ function txSheet(tx, preset) {
     if (t.tplId) { out.tplId = t.tplId; const tp = S.priv.tpl[t.tplId]; if (tp) { const nx = {...tp, ...tplData}; if (JSON.stringify(nx) !== JSON.stringify(tp)) await put(privPath(tp.id), nx); } }
     if (fd.get("makeTpl") === "on") { const tid = newId(); await put(privPath(tid), {id:tid, kind:"tpl", ...tplData, day:Number(out.date.slice(8)), createdAt:Date.now()}); out.tplId = tid; }
     await put(privPath(t.id), out);
+    if (t.planId) await savePrefs({planned:(prefs().planned || []).filter(x => x.id !== t.planId)});
     closeSheet(); toast("Guardado");
   }, f => {
     let last = null;
@@ -4149,6 +4170,10 @@ Object.assign(A, {
   invHolding: t => invHoldingSheet(t.dataset.sym),
   invLogout: () => { iolSave(null); closeSheet(); toast("Desconectado de este celu. Tus números quedan."); render(); },
   search: () => searchSheet(),
+  svHow: () => showDoc("Cómo se calcula", `<div class="doc"><p><b>Entra</b>: lo que ya cobraste este mes, más los ingresos fijos que todavía no cargaste y los ingresos previstos.</p><p><b>Ya gastaste</b>: lo que anotaste este mes (tu parte de los compartidos incluida), salvo lo pagado con tarjeta de crédito.</p><p><b>Tarjetas que vencen</b>: los resúmenes que vencen este mes. Las compras con crédito cuentan cuando pagás el resumen, no cuando comprás.</p><p><b>Previstos</b>: gastos (o ingresos) que sabés que van a pasar este mes aunque todavía no pasaron. Cuando pasa, tocá "ya pasó" y lo cargás.</p><p>El número grande es lo que te queda si no gastás nada más. Con la meta, te decimos cuánto podés gastar por día.</p></div>`),
+  planNew: t => planSheet(t.dataset.ym, t.dataset.cur),
+  planDel: async t => { await savePrefs({planned:(prefs().planned || []).filter(x => x.id !== t.dataset.id)}); toast("Quitado"); },
+  planDone: t => { const x = (prefs().planned || []).find(y => y.id === t.dataset.id); if (x) txSheet(null, {type:x.type === "ingreso" ? "ingreso" : "gasto", desc:x.desc, amount:x.amount, cur:x.cur, planId:x.id}); },
   pickGroup: t => { S.groupId = t.dataset.id; store.set("groupId", S.groupId); render(); },
   groupMenu: t => { const g = S.groups[t.dataset.id]; showDoc(g ? g.name : "Grupo", `<div class="grid" style="gap:8px">${g ? `<button class="btn" data-act="editGroup" data-id="${esc(g.id)}" style="justify-content:flex-start">✎ Editar ${esc(g.name)} (integrantes, división)</button>` : ""}<button class="btn" data-act="newGroup" style="justify-content:flex-start">+ Nuevo grupo</button></div>`); },
   ajGo: t => { closeSheet(); S.view = "ajustes"; S.ajPage = t.dataset.p || ""; render(); window.scrollTo({top:0}); },
@@ -4321,6 +4346,10 @@ render();
   };
   document.addEventListener("pointerup", end); document.addEventListener("pointercancel", end);
 })();
+// Montos: nunca un 0 adelante (si el campo tenía "0", se limpia al tocarlo; y "015000" queda "15000")
+document.addEventListener("focusin", e => { const t = e.target; if (t.matches && t.matches("input.money, input[name=amount], input[inputmode=decimal]") && /^0([.,]0*)?$/.test(t.value.trim())) t.value = ""; });
+document.addEventListener("input", e => { const t = e.target; if (!(t.matches && t.matches("input.money, input[name=amount], input[inputmode=decimal]"))) return;
+  const v = t.value, nv = v.replace(/^(\s*\$?\s*)0+(?=\d)/, "$1"); if (nv !== v) { const pos = Math.max(0, (t.selectionStart || nv.length) - (v.length - nv.length)); t.value = nv; try { t.setSelectionRange(pos, pos); } catch {} } }, true);
 // Apariencia elegida en este celu
 function applyLook() {
   const th = store.get("theme", "auto"); if (th === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = th;
