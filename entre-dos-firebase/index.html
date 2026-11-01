@@ -399,9 +399,20 @@ a.btn[aria-disabled="true"]{opacity:.5;pointer-events:none}
 .stmt b{font-size:14px}
 .stmt i{font-style:normal;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:var(--surface);color:var(--muted)}
 .stmt i.acc{color:var(--accent)}.stmt i.pos{color:var(--pos)}
+.aj-row{width:100%;text-align:left;background:none;border:0;font:inherit;color:inherit}
+.top .icon-btn,.top .eye-btn{flex:none}
+.top .brand{min-width:0;overflow:hidden;white-space:nowrap}
+#mePill{min-width:0}
+.acc-chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -4px;padding:0 4px 2px}
+.acc-chips::-webkit-scrollbar{display:none}
+.acc-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:120px;padding:8px 10px;border-radius:12px;border:1px solid var(--line);background:var(--surface2);color:inherit;font:inherit;cursor:pointer;text-align:left}
+.acc-chip small{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.acc-chip b{font-size:15px}
+.acc-chip i{font-style:normal;font-size:10.5px;font-weight:700;color:var(--muted)}
 .qa{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .qa.qa-top{grid-template-columns:repeat(3,minmax(0,1fr))}
 .qa.qa-top button{padding-block:16px}
+@media (max-width:420px){.qa.qa-top small{display:none}.qa.qa-top button{font-size:14px}}
 .qa button{border:0;background:var(--surface2);border-radius:16px;padding:14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;font-weight:700;color:var(--ink);min-width:0}
 .qa button small{font-weight:500;color:var(--muted);font-size:12.5px}
 .qa button:hover{background:var(--accent-soft)}
@@ -1259,7 +1270,7 @@ const ICONS = {
   finanzas:'<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   ajustes:'<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>'
 };
-const VIEWS = [["inicio","Inicio"],["agenda","Agenda"],["cuentas","Cuentas"],["finanzas","Mis finanzas"],["hogar","Hogar"],["ajustes","Ajustes"]];
+const VIEWS = [["inicio","Inicio"],["agenda","Agenda"],["cuentas","Gastos compartidos"],["finanzas","Mis finanzas"],["hogar","Hogar"],["ajustes","Ajustes"]];
 
 /* ---------- registro de errores (solo en este celu, sin datos personales) ---------- */
 const ERR_KEY = "entredos.errlog";
@@ -1291,7 +1302,7 @@ function renderInner() {
   if (S.fatal === "denied") { gateScreen(`La cuenta <b>${esc(S.email || "")}</b> todavía no tiene acceso. Pedile a quien administra Entre Dos que la sume en Ajustes → Quién puede entrar.`, true); return; }
   if (!S.ready) { if (!main.querySelector(".loading")) main.innerHTML = '<div class="loading"><span class="brand-mark"><i></i><i></i></span>Cargando…</div>'; return; }
   const me = meP();
-  const navBtn = ([k, l]) => `<button data-act="go" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ""}>${ICONS[k]}<span class="nl">${l}</span><span class="ns">${l.replace("Mis ", "").replace(/^f/, "F")}</span></button>`;
+  const navBtn = ([k, l]) => `<button data-act="go" data-v="${k}" ${S.view === k ? 'aria-current="page"' : ""}>${ICONS[k]}<span class="nl">${l}</span><span class="ns">${({cuentas:"Gastos"})[k] || l.replace("Mis ", "").replace(/^f/, "F")}</span></button>`;
   const navHtml = me ? VIEWS.filter(v => v[0] !== "ajustes").map(navBtn).join("") : "";
   for (const n of [$("#nav"), $("#bnav")]) { n.innerHTML = navHtml; n.hidden = !me; }
   $("#fab").hidden = !me || S.readOnly;
@@ -1636,13 +1647,24 @@ V.inicio = () => {
         <button class="hero-stat" data-act="go" data-v="finanzas"><div class="eyebrow">Gastaste</div><b>${esc(moneyS(spent, cur))}</b><small>${budgetTot ? "de " + esc(money(budgetTot, cur)) + " presupuestados" : inc ? "Ingresos: " + esc(money(inc, cur)) : "En " + esc(MONTHS[new Date().getMonth()]) + " · solo lo ves vos"}</small></button>
       </div>
     </section>
-    ${thanksCard(me.id)}
-    ${closeCard()}${sinceCard(me.id)}
-    ${todoHtml || `<section class="card" style="margin-bottom:16px"><div class="empty" style="padding:14px"><b>Todo al día</b>Están a mano y no hay nada pendiente.</div></section>`}
-    ${invHomeCard()}
-    ${listHtml}
-    ${weekHtml}`;
+    ${homeCards().filter(k => k.on).map(k => ({
+      gracias:() => thanksCard(me.id),
+      cierre:() => closeCard() + sinceCard(me.id),
+      todo:() => todoHtml || `<section class="card" style="margin-bottom:16px"><div class="empty" style="padding:14px"><b>Todo al día</b>Están a mano y no hay nada pendiente.</div></section>`,
+      checkin:() => checkinCard() ? checkinCard().replace('<section class="card" style="margin-top:12px">', '<section class="card" style="margin-bottom:16px">') : "",
+      inversiones:() => invHomeCard(),
+      lista:() => listHtml,
+      semana:() => weekHtml}[k.id] || (() => ""))()).join("")}
+    <p style="text-align:center;margin:4px 0 0"><button class="linkbtn small" data-act="ajGo" data-p="p-inicio">Personalizar Inicio</button></p>`;
 };
+// Tarjetas de Inicio: cada uno elige cuáles ve y en qué orden (preferencia privada)
+const HOME_CARDS = {todo:{t:"Para hacer", d:"Tus tareas, pagos de la semana, fechas y votaciones"}, gracias:{t:"Gracias", d:"Cuando tu pareja te deja un gracias"}, cierre:{t:"Cierre de mes y novedades", d:"Resumen del mes y lo que cambió desde tu última visita"},
+  checkin:{t:"¿Cómo estamos?", d:"Las 3 preguntas de la semana"}, inversiones:{t:"Mis inversiones", d:"Cómo te fue el último mes (solo vos)"}, lista:{t:"Lista de compras", d:"Para agregar sin salir de Inicio"}, semana:{t:"Próximos 7 días", d:"Eventos y fechas"}};
+function homeCards() {
+  const saved = Array.isArray(prefs().home) ? prefs().home.filter(k => HOME_CARDS[k.id]) : [];
+  const ids = saved.map(k => k.id);
+  return [...saved, ...Object.keys(HOME_CARDS).filter(id => !ids.includes(id)).map(id => ({id, on:true}))];
+}
 
 V.agenda = () => {
   const c = cfg(); const ws = prefs().weekStart;
@@ -1656,13 +1678,13 @@ V.agenda = () => {
   const people = peopleList();
   const filt = `<div class="filters">
     <span class="small muted" style="font-weight:600">Ver:</span>
-    ${people.map(p => `<button class="chip" data-act="togPerson" data-id="${esc(p.id)}" aria-pressed="${!S.hiddenPeople.includes(p.id)}"><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.uid === S.uid ? "Yo" : p.name)}</button>`).join("")}
+    ${people.map(p => `<button class="chip" data-act="togPerson" data-id="${esc(p.id)}" aria-pressed="${!S.hiddenPeople.includes(p.id)}"><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.uid === S.uid ? "Vos" : p.name)}</button>`).join("")}
     <button class="chip" data-act="togCats" aria-expanded="${!!S.showCats}">Categorías${S.hiddenCats.length ? ` · ${S.hiddenCats.length} ocultas` : ""} ${S.showCats ? "▴" : "▾"}</button>
   </div>${S.showCats ? `<div class="filters">` + c.calCats.map(k => `<button class="chip" data-act="togCat" data-id="${esc(k.id)}" aria-pressed="${!S.hiddenCats.includes(k.id)}"><span class="dot" style="--c:${esc(k.color)}"></span>${esc(k.name)}</button>`).join("") + `</div>` : ""}`;
   const head = `<div class="page-head"><h1>Agenda</h1>${helpBtn(S.calMode === "fechas" ? "fechas" : "agenda")}
     <div class="seg" role="group" aria-label="Vista"><label><input type="radio" name="calmode" value="mes" data-chg="calMode" ${S.calMode === "mes" ? "checked" : ""}><span>Mes</span></label><label><input type="radio" name="calmode" value="lista" data-chg="calMode" ${S.calMode === "lista" ? "checked" : ""}><span>Lista</span></label><label><input type="radio" name="calmode" value="fechas" data-chg="calMode" ${S.calMode === "fechas" ? "checked" : ""}><span>Fechas</span></label></div>
     ${S.calMode === "fechas" ? '<button class="btn primary" data-act="newDue">+ Fecha</button>' : '<button class="btn primary" data-act="newEvent">+ Evento</button>'}</div>`;
-  if (S.calMode === "fechas") return head + rentCard() + fechasBody() + mascotasBody();
+  if (S.calMode === "fechas") return head + fechasBody();
   if (S.calMode === "lista") {
     const from = t, to = ymd(addDays(new Date(), 60));
     const mp = eventsByDay(from, to), dm = duesByDay(from, to); const days = [...new Set([...Object.keys(mp), ...Object.keys(dm)])].sort();
@@ -1697,7 +1719,7 @@ V.agenda = () => {
 V.cuentas = () => {
   const g = curGroup();
   const gs = Object.values(S.groups);
-  if (!g) return `<div class="page-head"><h1>Cuentas</h1>${helpBtn("cuentas")}</div><section class="card"><div class="empty"><b>Armen su primer grupo de gastos</b>Cada uno carga lo que paga y la app les dice quién le pasa cuánto a quién. Pueden tener uno para la casa, otro para un viaje…<div style="margin-top:12px"><button class="btn primary" data-act="newGroup">Crear grupo</button></div></div></section>`;
+  if (!g) return `<div class="page-head"><h1>Gastos compartidos</h1>${helpBtn("cuentas")}</div><section class="card"><div class="empty"><b>Armen su primer grupo de gastos</b>Cada uno carga lo que paga y la app les dice quién le pasa cuánto a quién. Pueden tener uno para la casa, otro para un viaje…<div style="margin-top:12px"><button class="btn primary" data-act="newGroup">Crear grupo</button></div></div></section>`;
   const me = meId();
   const bal = balances(g.id);
   const curs = Object.keys(bal);
@@ -1718,7 +1740,7 @@ V.cuentas = () => {
         <span class="spacer">${settleBtns({...t, cur, group:g.id}, me)}</span></div>`).join("")}</div>` : `<p class="small muted">Están a mano en ${esc(cur)}.</p>`}
       <details class="bal-details" style="margin-top:8px"><summary class="small muted" style="cursor:pointer">Ver el detalle por persona</summary>
       ${ids.map(id => { const v = net[id] || 0; const w = Math.abs(v) / mx * 50;
-        return `<div class="bal-row"><div class="row" style="flex-wrap:nowrap;min-width:0">${avatar(id)}<div style="min-width:0"><div style="font-weight:600">${esc(pName(id))}${id === me ? " (yo)" : ""}</div><div class="small money ${v > 0.004 ? "pill-pos" : v < -0.004 ? "pill-neg" : "muted"}">${v > 0.004 ? "A favor " + esc(money(v, cur)) : v < -0.004 ? "A pagar " + esc(money(-v, cur)) : "A mano"}</div></div></div>
+        return `<div class="bal-row"><div class="row" style="flex-wrap:nowrap;min-width:0">${avatar(id)}<div style="min-width:0"><div style="font-weight:600">${esc(pName(id))}${id === me ? " (vos)" : ""}</div><div class="small money ${v > 0.004 ? "pill-pos" : v < -0.004 ? "pill-neg" : "muted"}">${v > 0.004 ? "A favor " + esc(money(v, cur)) : v < -0.004 ? "A pagar " + esc(money(-v, cur)) : "A mano"}</div></div></div>
           <div class="bal-bar"><i style="${v >= 0 ? `left:50%;width:${w}%;background:var(--pos)` : `right:50%;width:${w}%;background:var(--neg)`}"></i></div></div>`; }).join("")}
       </details>
     </div>`;
@@ -1743,9 +1765,8 @@ V.cuentas = () => {
       <div class="grow"><div class="t">${esc(e.desc)}</div><div class="s">${esc(shortDate(e.date))} · Pagó ${esc(pName(e.paidBy))} · ${esc(cat.name)}${e.hist && e.hist.length ? " · editado por " + esc(pName(e.hist[e.hist.length - 1].by)) : ""}${(() => { const ks = Object.keys(sh); return ks.length === 1 && ks[0] !== e.paidBy ? " · todo de " + esc(pName(ks[0])) : e.splitMode && e.splitMode !== "equal" ? " · división personalizada" : ""; })()}</div></div>
       <div class="amt"><div class="money" style="font-weight:700">${esc(money(e.amount, e.cur))}</div>${impact}</div></div>`;
   }
-  return `<div class="page-head"><h1>Cuentas</h1>${helpBtn("cuentas")}
-      <select class="input" style="width:auto;max-width:60vw" data-chg="group" aria-label="Grupo">${gs.map(x => `<option value="${esc(x.id)}" ${x.id === g.id ? "selected" : ""}>${esc(x.name)}</option>`).join("")}<option disabled>──────</option><option value="__edit">✎ Editar ${esc(g.name)} (${(g.members || []).length} ${(g.members || []).length === 1 ? "persona" : "personas"})</option><option value="__new">+ Nuevo grupo…</option></select>
-      <button class="btn primary" data-act="newExpense">+ Gasto</button></div>
+  return `<div class="page-head"><h1>Gastos compartidos</h1>${helpBtn("cuentas")}</div>
+    <div class="row" style="gap:6px;margin:-6px 0 12px;flex-wrap:nowrap"><div class="filters" style="flex:1;margin:0">${gs.map(x => `<button class="chip" data-act="pickGroup" data-id="${esc(x.id)}" aria-pressed="${x.id === g.id}">${esc(x.name)}</button>`).join("")}</div><button class="icon-btn" data-act="groupMenu" data-id="${esc(g.id)}" aria-label="Opciones del grupo">⋯</button></div>
     <div class="grid g2" style="align-items:start">
       <section class="card"><div class="card-h"><span class="ic b">${UI.scale}</span><h2>Balance</h2>${curs.length ? `<button class="btn sm spacer" data-act="copySummary" data-id="${esc(g.id)}">Copiar resumen</button>` : ""}</div>${balCard}${fxCard(g, bal)}</section>
       <section class="card"><div class="seg" role="group" aria-label="Sección" style="margin-bottom:12px">${[["mov","Historial"],["resumen","Resumen"],["fijos","Fijos"]].map(([v, l]) => `<label><input type="radio" name="ctab" value="${v}" data-chg="cTab" ${S.cTab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
@@ -1787,9 +1808,10 @@ V.finanzas = () => {
     if (oth.length) { const conv = oth.filter(o => fxRate(o.x)), miss = oth.filter(o => !fxRate(o.x)); const tot = r2(own + shared + conv.reduce((s2, o) => s2 + o.v * fxRate(o.x), 0));
       otherTxt = `<p class="small muted" style="margin:-6px 0 14px">${conv.length ? `Con lo gastado en ${conv.map(o => esc(money(o.v, o.x))).join(" y ")} (a la cotización guardada), en total gastaste <b class="money">${esc(money(tot, BASE))}</b>.` : ""}${miss.length ? ` También gastaste ${miss.map(o => esc(money(o.v, o.x))).join(" y ")}: <button class="linkbtn" data-act="go" data-v="cuentas">cargá la cotización</button> para sumarlo.` : ""}</p>`; } }
   const seg = `<div class="seg" role="group" aria-label="Sección" style="margin-bottom:14px">${[["mes","Mes"],["analisis","Análisis"],["metas","Metas"],["inversiones","Inversiones"]].map(([v, l]) => `<label><input type="radio" name="ftab" value="${v}" data-chg="fTab" ${tab === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>`;
-  if (tab === "inversiones") return `<div class="page-head"><h1>Mis finanzas</h1>${helpBtn("inversiones")}<span class="small muted">Solo vos ves esta sección.</span></div>${seg}${invView()}`;
+  const finHead = hb => `<div class="page-head" style="flex-wrap:nowrap"><div style="min-width:0"><h1 style="margin:0">Mis finanzas</h1><div class="small muted">🔒 Solo vos ves esta sección</div></div><span class="spacer"></span><button class="icon-btn" data-act="ajGo" data-p="p-fin" aria-label="Personalizar mis finanzas" title="Personalizar">⚙</button>${helpBtn(hb).replace('style="margin-left:auto"', '')}</div>`;
+  if (tab === "inversiones") return finHead("inversiones") + `${seg}${invView()}`;
   const body = tab === "analisis" ? `<div class="grid g2" style="align-items:start;margin-bottom:16px">
-      <section class="card"><div class="card-h"><span class="ic">${UI.chart}</span><h2>Por categoría</h2><button class="btn sm spacer" data-act="catMgr" data-type="exp">Categorías</button><button class="btn sm" data-act="budgets">Presupuestos</button></div>
+      <section class="card"><div class="card-h"><span class="ic">${UI.chart}</span><h2>Por categoría</h2><button class="btn ghost sm spacer" data-act="budgets">Presupuestos</button></div>
         <div style="margin-top:8px">${catIds.length ? catIds.map(id => { const k = anyCat(id); const v = byCat[id] || 0; const b = Number(budgets[cur + ":" + id] || 0);
           const pct = b ? v / b * 100 : v / mxCat * 100;
           return `<div class="cat-row" style="--c:${esc(k.color)}"><div class="row" style="min-width:0"><span class="dot"></span><b>${esc(k.name)}</b></div>
@@ -1800,12 +1822,12 @@ V.finanzas = () => {
         <div class="trend">${trend.map(t => `<div class="${t.m === ym ? "cur" : ""}" title="${esc(ymLabel(t.m))}: ${esc(money(t.v, cur))}"><span class="money">${t.v ? esc(compact(t.v)) : ""}</span><i style="height:${(t.v / mxT * 80).toFixed(1)}%"></i><span>${MON_S[Number(t.m.slice(5)) - 1]}</span></div>`).join("")}</div>
       </section>
       ${projectionHtml(cur)}</div>
-    <div class="grid g2" style="align-items:start">${walletsHtml(cur)}${cuotasHtml}</div>`
+    <div class="grid g2" style="align-items:start">${cuotasHtml}</div>`
     : tab === "metas" ? `<div class="grid g2" style="align-items:start">
       <section class="card"><div class="card-h"><span class="ic">${UI.up}</span><h2>Metas de ahorro</h2><button class="btn sm spacer" data-act="newGoal">+ Meta</button></div>
         ${allGoals().length ? `<div class="goal-grid">${allGoals().map(goalCard).join("")}</div>` : `<div class="empty"><b>Sin metas todavía</b>Creá una para las vacaciones, la mudanza o un fondo de emergencia. Puede ser compartida o solo tuya.</div>`}</section>
     </div>`
-    : `${savingsHtml(cur, ym)}    <div class="grid g3 stats" style="margin-bottom:16px">
+    : `${myAccountsHtml()}${savingsHtml(cur, ym)}    <div class="grid g3 stats" style="margin-bottom:16px">
       <div class="card stat"><span class="si" style="--c:var(--pos)">${UI.up}</span><div class="eyebrow">Ingresos</div><div class="big money">${esc(money(inc, cur))}</div></div>
       <div class="card stat"><span class="si" style="--c:var(--accent)">${UI.down}</span><div class="eyebrow">Gastos propios</div><div class="big money">${esc(money(own, cur))}</div></div>
       <div class="card stat"><span class="si" style="--c:var(--accent2)">${UI.share}</span><div class="eyebrow">Tu parte compartida</div><div class="big money">${esc(money(shared, cur))}</div><div class="small muted">Lo que te corresponde, no lo que pagaste</div></div>
@@ -1813,7 +1835,7 @@ V.finanzas = () => {
     </div>
 ${otherTxt}
     <div class="grid g2" style="align-items:start">
-      <section class="card"><div class="card-h"><span class="ic b">${UI.list}</span><h2>Movimientos del mes</h2></div>${(() => { const pms = [...new Set(its.map(i => i.ref.payWith ? (pmId(i.ref.payWith) ? "pm:" + pmId(i.ref.payWith) : i.ref.payWith) : "").filter(Boolean))], cats = [...new Set(its.map(i => (i.type === "ingreso" ? "inc:" : "exp:") + i.cat))];
+      <section class="card"><div class="card-h"><span class="ic b">${UI.list}</span><h2>Gastos e ingresos del mes</h2></div>${(() => { const pms = [...new Set(its.map(i => i.ref.payWith ? (pmId(i.ref.payWith) ? "pm:" + pmId(i.ref.payWith) : i.ref.payWith) : "").filter(Boolean))], cats = [...new Set(its.map(i => (i.type === "ingreso" ? "inc:" : "exp:") + i.cat))];
         return its.length > 4 ? `<div class="row" style="gap:6px;margin-bottom:6px"><select class="input" style="flex:1;width:auto" data-chg="fPm" aria-label="Medio de pago"><option value="">Todos los medios</option>${pms.map(v => `<option value="${esc(v)}" ${S.fPm === v ? "selected" : ""}>${esc(pmLabel(v) || "—")}</option>`).join("")}<option value="__none" ${S.fPm === "__none" ? "selected" : ""}>Sin especificar</option></select>
           <select class="input" style="flex:1;width:auto" data-chg="fCat" aria-label="Categoría"><option value="">Todas las categorías</option>${cats.map(v => `<option value="${esc(v)}" ${S.fCat === v ? "selected" : ""}>${esc(anyCat(v.slice(4), v.slice(0, 3)).name)}</option>`).join("")}</select></div>` : ""; })()}<div class="list">${its.filter(i => (!S.fPm || (S.fPm === "__none" ? !i.ref.payWith : (pmId(i.ref.payWith) ? "pm:" + pmId(i.ref.payWith) : i.ref.payWith) === S.fPm)) && (!S.fCat || S.fCat === (i.type === "ingreso" ? "inc:" : "exp:") + i.cat)).length ? its.filter(i => (!S.fPm || (S.fPm === "__none" ? !i.ref.payWith : (pmId(i.ref.payWith) ? "pm:" + pmId(i.ref.payWith) : i.ref.payWith) === S.fPm)) && (!S.fCat || S.fCat === (i.type === "ingreso" ? "inc:" : "exp:") + i.cat)).map(i => {
         const k = anyCat(i.cat, i.type === "ingreso" ? "inc" : "exp");
@@ -1821,42 +1843,37 @@ ${otherTxt}
           <div class="grow"><div class="t">${esc(i.desc || k.name)}</div><div class="s">${esc(shortDate(i.date))} · ${esc(k.name)}${i.ref.payWith && pmLabel(i.ref.payWith) ? " · " + esc(pmLabel(i.ref.payWith)) : ""}${i.src === "shared" ? " · tu parte en " + esc(S.groups[i.ref.group]?.name || "grupo") : ""}</div></div>
           <div class="amt money ${i.type === "ingreso" ? "pill-pos" : ""}" style="font-weight:700">${i.type === "ingreso" ? "+" : "−"}${esc(money(i.amount, cur))}</div></div>`; }).join("") : `<div class="empty"><b>Nada este mes</b>Tus ingresos y gastos personales aparecen acá, junto con tu parte de los compartidos.</div>`}</div></section>
       <section class="card"><div class="card-h"><span class="ic b">${UI.wallet}</span><h2>Mis fijos mensuales</h2></div>
-        <p class="small muted" style="margin:0 0 6px">Estado de ${esc(ymLabel(todayS().slice(0, 7)))}. Para sumar uno, al cargar un movimiento marcá "Se repite todos los meses".</p>
-        <div class="list">${myTpl().length ? myTpl().map(t => fixedRow(t, "tpl", todayS().slice(0, 7))).join("") : `<div class="empty"><b>Sin fijos todavía</b>Sueldo, alquiler, gimnasio: al cargarlos marcá "Se repite todos los meses" y te los recordamos.</div>`}</div></section>
+        <p class="small muted" style="margin:0 0 6px">Estado de ${esc(ymLabel(todayS().slice(0, 7)))}. Para sumar uno, al cargar un gasto o ingreso marcá "Se repite cada mes".</p>
+        <div class="list">${myTpl().length ? myTpl().map(t => fixedRow(t, "tpl", todayS().slice(0, 7))).join("") : `<div class="empty"><b>Sin fijos todavía</b>Sueldo, alquiler, gimnasio: al cargarlos marcá "Se repite cada mes" y te los recordamos.</div>`}</div></section>
     </div>`;
-  return `<div class="page-head"><h1>Mis finanzas</h1>${helpBtn("finanzas")}
-      <span class="small muted">Solo vos ves esta sección.</span>
-      <button class="btn primary" data-act="newTx">+ Movimiento</button></div>
-    <div class="row" style="margin-bottom:14px">
+  return finHead("finanzas") + `
+    <div class="row" style="margin-bottom:14px;flex-wrap:nowrap;gap:6px">
       <button class="icon-btn" data-act="finNav" data-n="-1" aria-label="Mes anterior">‹</button>
-      <h2 style="margin:0;text-transform:capitalize;min-width:160px;text-align:center">${esc(ymLabel(ym))}</h2>
+      <h2 style="margin:0;text-transform:capitalize;flex:1;text-align:center;font-size:19px">${esc(ymLabel(ym))}</h2>
       <button class="icon-btn" data-act="finNav" data-n="1" aria-label="Mes siguiente">›</button>
-      <select class="input spacer" style="width:auto" data-chg="finCur" aria-label="Moneda">${usedCurs.filter(x => CURS.includes(x)).map(x => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+      <select class="input" style="width:auto;flex:none;padding-inline:8px" data-chg="finCur" aria-label="Moneda">${usedCurs.filter(x => CURS.includes(x)).map(x => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
     </div>
     ${seg}${body}`;
 };
 function compact(v) { return v >= 1e6 ? (v / 1e6).toFixed(1).replace(".", ",") + "M" : v >= 1e3 ? Math.round(v / 1e3) + "k" : Math.round(v); }
 
 V.ajustes = () => {
-  const me = meP(); const p = prefs(); const c = cfg();
-  const avisosPending = FB.ok && !p.tgChat && !Object.keys(S.priv.push || {}).length;
+  const me = meP(); const p = prefs(); const c = cfg(); const pg = S.ajPage || "";
   const catEditor = (key, title) => `<section class="card"><h2>${title}</h2><div>${c[key].map((k, i) => `<div class="set-row">
       <input type="color" value="${esc(k.color)}" data-chg="catColor" data-key="${key}" data-i="${i}" aria-label="Color">
       <input class="input" id="cat-${key}-${i}" value="${esc(k.name)}" data-chg="catName" data-key="${key}" data-i="${i}" aria-label="Nombre">
       <button class="btn sm danger" data-act="delCat" data-key="${key}" data-i="${i}" ${c[key].length < 2 ? "disabled" : ""}>Quitar</button></div>`).join("")}</div>
     <div class="row" style="margin-top:8px"><input class="input" id="newcat-${key}" placeholder="Nueva categoría" style="flex:1;width:auto"><button class="btn sm" data-act="addCat" data-key="${key}">Agregar</button></div></section>`;
-  return `<div class="page-head"><h1>Ajustes</h1></div>
-  <div class="chips-nav" style="display:flex;gap:6px;flex-wrap:wrap;margin:-6px 0 14px">${[["sg-vos","Vos"],["sg-pareja","Pareja y acceso"],["sg-avisos","Avisos"],["sg-datos","Datos"]].map(([id, l]) => `<button class="chip" data-act="jump" data-id="${id}">${l}</button>`).join("")}</div>
-  <div class="grid g2" style="align-items:start">
-    ${avisosPending ? `<h2 class="set-group" id="sg-avisos">Avisos</h2>${avisosCard()}` : ""}
-    <h2 class="set-group" id="sg-vos">Vos</h2>
+  const back = to => `<button class="btn ghost sm" data-act="ajGo" data-p="${to}" style="padding-left:0">‹ ${to ? "Personalizar" : "Ajustes"}</button>`;
+  const head = (t, to) => `<div class="page-head"><div style="width:100%">${pg ? back(to) : ""}<h1 style="margin:2px 0 0">${t}</h1></div></div>`;
+  const row = (id, ic, t, d) => `<button class="item click aj-row" data-act="ajGo" data-p="${id}"><span class="cat-ic" style="--c:var(--accent)">${ic}</span><div class="grow"><div class="t">${t}</div><div class="s">${d}</div></div><span class="muted">›</span></button>`;
+  const wrap = x => `<div class="grid g2" style="align-items:start">${x}</div>`;
+  if (pg === "vos") return head("Vos", "") + wrap(`
     <section class="card"><h2>Tu perfil</h2>
       ${FB.ok ? `<div class="set-row"><span style="flex:1" class="small muted">Entraste como <b>${esc(S.email || "")}</b></span><button class="btn sm" data-act="signOut">Cerrar sesión</button></div>` : ""}
       <div class="set-row"><label class="field" style="flex:1"><span>Nombre</span><input class="input" id="meName" value="${esc(me.name)}" data-chg="meName" maxlength="30"></label></div>
       <div class="set-row"><label class="field" style="flex:1"><span>Tu alias para transferencias (opcional)</span><input class="input" value="${esc(me.alias || "")}" data-chg="meAlias" maxlength="40" placeholder="por ejemplo: aldi.mp" autocomplete="off"><small class="muted">Lo ve tu pareja al lado de "Para quedar a mano", con un botón para copiarlo. Nunca pongas el CBU ni datos de la tarjeta.</small></label></div>
       <div class="set-row"><div class="field"><span>Color</span><div data-chg-wrap="meColor">${swatches("mecolor", me.color)}</div></div></div>
-      <div class="set-row"><label class="field"><span>La semana empieza el</span><select class="input" data-chg="weekStart"><option value="1" ${p.weekStart == 1 ? "selected" : ""}>lunes</option><option value="0" ${p.weekStart == 0 ? "selected" : ""}>domingo</option></select></label>
-        <label class="field"><span>Moneda principal</span><select class="input" data-chg="prefCur">${CURS.map(x => `<option ${x === p.cur ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
     </section>
     <section class="card"><h2>Privacidad y seguridad</h2>
       <div class="row" style="margin-bottom:6px"><button class="btn sm" data-act="showPrivacy">Cómo cuidamos tus datos</button><button class="btn sm" data-act="showTerms">Términos de uso</button></div>
@@ -1866,7 +1883,8 @@ V.ajustes = () => {
       <div class="set-row"><span style="flex:1"><b>Terminar de compartir</b><br><span class="small muted">Si se separan o querés salir del espacio</span></span><button class="btn sm" data-act="leaveSheet">Ver pasos</button></div>
       <div style="margin-top:8px">${HELP_HTML}</div>
     </section>
-    <h2 class="set-group" id="sg-pareja">Pareja y grupos</h2>
+`);
+  if (pg === "pareja") return head("Pareja y grupos", "") + wrap(`
     ${accessCard()}
     <section class="card"><h2>Personas</h2>
       <p class="small muted" style="margin-top:-4px">Podés sumar gente sin cuenta (amigos de un viaje) para dividir gastos con ellos.</p>
@@ -1879,9 +1897,9 @@ V.ajustes = () => {
       ${Object.values(S.groups).map(g => `<div class="set-row"><div class="grow" style="flex:1"><b>${esc(g.name)}</b><div class="small muted">${(g.members || []).map(pName).map(esc).join(", ")}</div></div><button class="btn sm" data-act="editGroup" data-id="${esc(g.id)}">Editar</button></div>`).join("") || '<p class="muted small">Todavía no hay grupos. Creá uno para dividir gastos.</p>'}
       <div style="margin-top:8px"><button class="btn sm" data-act="newGroup">+ Grupo</button></div>
     </section>
-    ${avisosPending || !FB.ok ? "" : `<h2 class="set-group" id="sg-avisos">Avisos</h2>${avisosCard()}`}
-    <h2 class="set-group" id="sg-datos">Datos</h2>
-    <section class="card"><h2>¿Algo no anda?</h2><p class="small muted" style="margin:-4px 0 8px">La app anota los errores en este celu, sin datos personales, para poder arreglarlos.</p><button class="btn sm" data-act="errLog">Ver registro de errores</button></section>
+`);
+  if (pg === "avisos") return head("Avisos", "") + wrap(avisosCard() || `<section class="card"><p class="small muted" style="margin:0">Los avisos funcionan cuando la app está conectada.</p></section>`);
+  if (pg === "datos") return head("Datos y respaldo", "") + wrap(`
     <section class="card"><h2>Bajar una copia</h2>
       <p class="small muted" style="margin-top:-4px">Bajá una copia para guardarla o abrirla en Excel. Incluye lo compartido y lo tuyo privado; nunca lo privado de otras personas. Con "Importar una copia" traés lo que tenías en la versión anterior.</p>
       <div class="export-btns">
@@ -1895,12 +1913,41 @@ V.ajustes = () => {
         return `<div class="item"><div class="grow"><div class="t">${esc(t.name)}</div><div class="s">${esc(t.type)} · borrado el ${esc(shortDate(ymd(new Date(t.at))))}${t.by && S.people[t.by] && t.by !== meId() ? " por " + esc(pName(t.by)) : ""} · se elimina en ${left} ${left === 1 ? "día" : "días"}</div></div>
           <button class="btn sm" data-act="restoreTrash" data-path="${esc(t.paths[0])}">Restaurar</button>${["Gasto", "Pago", "Conversión"].includes(t.type) || (t.by && t.by !== meId()) ? "" : `<button class="x-btn" data-act="armDo" data-do="purgeTrash" data-path="${esc(t.paths[0])}" aria-label="Borrar para siempre ${esc(t.name)}" title="Borrar para siempre">×</button>`}</div>`; }).join("")}</div>`
         : `<div class="empty"><b>La papelera está vacía</b>Lo que borres queda acá ${TRASH_DAYS} días, por si te arrepentís.</div>`; })()}</section>
-    <details class="card" style="grid-column:1/-1"><summary style="cursor:pointer;font-weight:700">Categorías de agenda, gastos e ingresos</summary><div class="grid g2" style="align-items:start;margin-top:12px">
-    ${catEditor("calCats", "Categorías de agenda")}
-    ${catEditor("expCats", "Categorías de gastos")}
-    ${catEditor("incCats", "Categorías de ingresos")}
-    </div></details>
-  </div>`;
+    <section class="card"><h2>¿Algo no anda?</h2><p class="small muted" style="margin:-4px 0 8px">La app anota los errores en este celu, sin datos personales, para poder arreglarlos.</p><button class="btn sm" data-act="errLog">Ver registro de errores</button></section>
+`);
+  if (pg === "pers") return head("Personalizar", "") + `<section class="card" style="max-width:720px"><div class="list">
+    ${row("p-inicio", "🏠", "Inicio", "Qué tarjetas ves y en qué orden")}
+    ${row("p-fin", "💳", "Mis finanzas", "Cuentas y tarjetas, categorías, presupuestos, moneda")}
+    ${row("p-comp", "👥", "Gastos compartidos", "Categorías que usan los dos")}
+    ${row("p-hogar", "🧹", "Hogar", "Qué secciones mostrar")}
+    ${row("p-agenda", "📅", "Agenda", "Día en que empieza la semana, categorías de eventos")}
+    ${row("p-apariencia", "🎨", "Apariencia", "Tema claro u oscuro, tamaño de letra")}</div></section>`;
+  if (pg === "p-inicio") { const cards = homeCards();
+    return head("Inicio", "pers") + `<section class="card" style="max-width:720px"><p class="small muted" style="margin:0 0 8px">Elegí qué ves en Inicio y en qué orden. Es solo para vos.</p><div class="list">${cards.map((k, i) => `<div class="item"><label class="row grow" style="gap:10px;flex-wrap:nowrap"><input type="checkbox" data-chg="homeOn" data-id="${k.id}" ${k.on ? "checked" : ""}><span><b>${esc(HOME_CARDS[k.id].t)}</b><br><span class="small muted">${esc(HOME_CARDS[k.id].d)}</span></span></label>
+      <button class="icon-btn" data-act="homeMove" data-i="${i}" data-d="-1" aria-label="Subir" ${i === 0 ? "disabled" : ""}>↑</button><button class="icon-btn" data-act="homeMove" data-i="${i}" data-d="1" aria-label="Bajar" ${i === cards.length - 1 ? "disabled" : ""}>↓</button></div>`).join("")}</div></section>`; }
+  if (pg === "p-fin") { const ce = myCats("exp").filter(k => !k.hidden), ci = myCats("inc").filter(k => !k.hidden);
+    return head("Mis finanzas", "pers") + wrap(`${walletsHtml(p.cur)}
+    <section class="card"><div class="card-h"><h2>Categorías</h2><button class="btn ghost sm spacer" data-act="catMgr" data-type="exp">Editar</button></div>
+      <p class="small muted" style="margin:0 0 8px">Son solo tuyas.</p>
+      <div class="small"><b>Gastos:</b> ${ce.map(k => esc((k.emoji ? k.emoji + " " : "") + k.name)).join(" · ")}</div><div class="small" style="margin-top:6px"><b>Ingresos:</b> ${ci.map(k => esc((k.emoji ? k.emoji + " " : "") + k.name)).join(" · ")}</div></section>
+    <section class="card"><div class="card-h"><h2>Presupuestos</h2><button class="btn ghost sm spacer" data-act="budgets">Editar</button></div>
+      <p class="small muted" style="margin:0">${Object.keys(p.budgets || {}).length ? `Tenés ${Object.keys(p.budgets).length} presupuestos por categoría.` : "Poné un tope por mes a las categorías que quieras cuidar."}</p></section>
+    <section class="card"><h2>Moneda principal</h2><select class="input" data-chg="prefCur">${CURS.map(x => `<option ${x === p.cur ? "selected" : ""}>${x}</option>`).join("")}</select><p class="small muted" style="margin:8px 0 0">Con la que se muestran Mis finanzas e Inicio.</p></section>`); }
+  if (pg === "p-comp") return head("Gastos compartidos", "pers") + wrap(`${catEditor("expCats", "Categorías de gastos compartidos")}${catEditor("incCats", "Categorías de ingresos compartidos")}`);
+  if (pg === "p-hogar") { const hid = p.hogarHidden || [];
+    return head("Hogar", "pers") + `<section class="card" style="max-width:720px"><p class="small muted" style="margin:0 0 8px">Mostrá solo las secciones que usan.</p><div class="list">${HOGAR_TABS.map(([v, l]) => `<label class="item"><input type="checkbox" data-chg="hogarTab" data-id="${v}" ${hid.includes(v) ? "" : "checked"} ${v === "tareas" ? "disabled" : ""}><span class="grow">${l}</span></label>`).join("")}</div></section>`; }
+  if (pg === "p-agenda") return head("Agenda", "pers") + wrap(`<section class="card"><h2>Semana</h2><label class="field"><span>La semana empieza el</span><select class="input" data-chg="weekStart"><option value="1" ${p.weekStart == 1 ? "selected" : ""}>lunes</option><option value="0" ${p.weekStart == 0 ? "selected" : ""}>domingo</option></select></label></section>${catEditor("calCats", "Categorías de eventos")}`);
+  if (pg === "p-apariencia") { const th = store.get("theme", "auto"), fs = store.get("fs", "1");
+    return head("Apariencia", "pers") + `<section class="card" style="max-width:720px"><div class="field"><span>Tema</span><div class="seg" role="group">${[["auto","Como el celu"],["dark","Oscuro"],["light","Claro"]].map(([v, l]) => `<label><input type="radio" name="theme" value="${v}" data-chg="theme" ${th === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div></div>
+      <div class="field" style="margin-top:12px"><span>Tamaño de letra</span><div class="seg" role="group">${[["1","Normal"],["1.1","Grande"],["1.2","Muy grande"]].map(([v, l]) => `<label><input type="radio" name="fs" value="${v}" data-chg="fontSize" ${fs === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div></div>
+      <p class="small muted" style="margin:10px 0 0">Se guarda en este celu.</p></section>`; }
+  // índice
+  return `<div class="page-head"><h1>Ajustes</h1></div><section class="card" style="max-width:720px"><div class="list">
+    ${row("vos", "🙂", "Vos", "Perfil, alias, color, PIN y privacidad")}
+    ${row("pareja", "👥", "Pareja y grupos", "Quién puede entrar, personas y grupos de gastos")}
+    ${row("pers", "⚙️", "Personalizar", "Inicio, mis finanzas, hogar, agenda, apariencia")}
+    ${FB.ok ? row("avisos", "🔔", "Avisos", p.tgChat || Object.keys(S.priv.push || {}).length ? "Telegram y notificaciones" : "Todavía no los activaste") : ""}
+    ${row("datos", "💾", "Datos y respaldo", "Bajar una copia, papelera, errores")}</div></section>`;
 };
 
 /* ---------- fixed monthly items ---------- */
@@ -2097,9 +2144,10 @@ function groupSummary(g) {
 }
 function groupFixed(g) {
   const ym = todayS().slice(0, 7);
+  const rent = rentCard();
   const ts = Object.values(S.fixed).filter(t => t.group === g.id).sort((a, b) => (a.day || 0) - (b.day || 0));
-  return `<p class="small muted" style="margin:0 0 6px">Gastos que se repiten cada mes en ${esc(g.name)}. Estado de ${esc(ymLabel(ym))}.</p>
-    <div class="list">${ts.length ? ts.map(t => fixedRow(t, "fixed", ym)).join("") : `<div class="empty"><b>Sin gastos fijos</b>Alquiler, expensas, servicios: al cargar uno marcá "Es un gasto fijo mensual" y cada mes lo cargan con un toque.</div>`}</div>`;
+  return `${rent.replace('style="max-width:760px;margin-bottom:14px"', 'style="margin:0 0 12px;box-shadow:none;border:1px solid var(--line)"')}<p class="small muted" style="margin:0 0 6px">Gastos que se repiten cada mes en ${esc(g.name)}. Estado de ${esc(ymLabel(ym))}.</p>
+    <div class="list">${ts.length ? ts.map(t => fixedRow(t, "fixed", ym)).join("") : `<div class="empty"><b>Sin gastos fijos</b>Alquiler, expensas, servicios: al cargar uno marcá "Se repite cada mes" y cada mes lo cargan con un toque.</div>`}</div>`;
 }
 function summaryText(g) {
   const bal = balances(g.id); const lines = [`${g.name} · saldos al ${shortDate(todayS())}`];
@@ -2250,12 +2298,14 @@ function sortedChores(onlyMine) {
     .filter(x => !x.st.done && (!onlyMine || !x.st.who || x.st.who === me))
     .sort((a, b) => a.st.days - b.st.days || a.c.name.localeCompare(b.c.name));
 }
+const HOGAR_TABS = [["tareas","Tareas"],["listas","Listas"],["menu","Menú"],["decidir","Juntos"],["mascotas","Mascotas"]];
 function hogarHead(btn) {
   return `<div class="page-head"><h1>Hogar</h1>${helpBtn("hogar")}
-    <div class="seg hseg" role="group" aria-label="Sección">${[["tareas","Tareas"],["listas","Listas"],["menu","Menú"],["decidir","Juntos"]].map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+    <div class="seg hseg" role="group" aria-label="Sección">${HOGAR_TABS.filter(([v]) => v === "tareas" || !(prefs().hogarHidden || []).includes(v)).map(([v, l]) => `<label><input type="radio" name="htab" value="${v}" data-chg="hTab" ${(S.hTab || "tareas") === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
     ${btn}</div>`;
 }
-V.hogar = () => S.hTab === "listas" ? V.listas() : S.hTab === "menu" ? V.menu() : S.hTab === "decidir" ? V.decidir() : V.tareas();
+V.hogar = () => { if (S.hTab !== "tareas" && (prefs().hogarHidden || []).includes(S.hTab)) S.hTab = "tareas";
+  return S.hTab === "listas" ? V.listas() : S.hTab === "menu" ? V.menu() : S.hTab === "decidir" ? V.decidir() : S.hTab === "mascotas" ? hogarHead('<button class="btn primary" data-act="newPet">+ Mascota</button>') + mascotasBody() : V.tareas(); };
 V.tareas = () => {
   const head = hogarHead('<button class="btn primary" data-act="newChore">+ Tarea</button>');
   if (!Object.keys(S.chores).length) return head + `<section class="card"><div class="empty"><b>Organicen las tareas de la casa</b>Cada tarea se repite sola, se turnan entre ustedes y queda registrado quién hizo qué.
@@ -2297,7 +2347,7 @@ function choreSheet(ch) {
   const c = ch || {id:newId(), name:"", area:"limpieza", every:1, unit:"week", assign:"rotate", who:accounts.length ? accounts : [me], points:2, start:todayS()};
   const wk = c.unit === "weekdays"; const wd = choreWdays(c);
   const order = [0, 1, 2, 3, 4, 5, 6].map(i => (ws + i) % 7);
-  const ownerOpts = sel => `<option value="">Cualquiera</option>` + peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.id === me ? "Yo" : p.name)}</option>`).join("");
+  const ownerOpts = sel => `<option value="">Cualquiera</option>` + peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === sel ? "selected" : ""}>${esc(p.id === me ? "Vos" : p.name)}</option>`).join("");
   const st = !isNew ? choreState(c) : null;
   openSheet(isNew ? "Nueva tarea" : "Editar tarea", `
     <label class="field"><span>Tarea</span><input class="input" name="name" maxlength="60" value="${esc(c.name)}" placeholder="Limpiar el baño, sacar la basura…"></label>
@@ -2318,7 +2368,7 @@ function choreSheet(ch) {
     </fieldset>
     <div class="field"><span>¿Quién la hace?</span>
       <div class="seg">${[["rotate","Se turnan"],["fixed","Siempre la misma"],["anyone","Cualquiera"]].map(([v, l]) => `<label><input type="radio" name="assign" value="${v}" ${(c.assign === "byDay" ? "fixed" : c.assign) === v ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
-      <div class="checks" data-who style="margin-top:6px">${peopleList().map(p => `<label><input type="checkbox" name="who" value="${esc(p.id)}" ${(c.who || []).includes(p.id) ? "checked" : ""}><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.id === me ? "Yo" : p.name)}</label>`).join("")}</div>
+      <div class="checks" data-who style="margin-top:6px">${peopleList().map(p => `<label><input type="checkbox" name="who" value="${esc(p.id)}" ${(c.who || []).includes(p.id) ? "checked" : ""}><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.id === me ? "Vos" : p.name)}</label>`).join("")}</div>
       <small class="muted" data-whohint></small>
       <div data-perdaybox style="margin-top:8px">
         <label class="row small" style="font-weight:600"><input type="checkbox" name="perDay" ${c.assign === "byDay" ? "checked" : ""}> Cada día le toca a alguien distinto</label>
@@ -2333,7 +2383,7 @@ function choreSheet(ch) {
       <div class="row"><button class="btn" type="button" data-act="skipChore" data-id="${esc(c.id)}">Saltear esta vez</button><span class="small muted">Se pasa a la próxima sin contar como hecha.</span></div>
       ${c.unit !== "once" && st ? `<label class="field"><span>Mover solo la próxima (${esc(DOWL[wdayOf(st.pend)])} ${esc(shortDate(st.pend))}) a</span><div class="row" style="flex-wrap:nowrap"><input class="input" type="date" name="moveTo" value="${esc(st.moved ? c.moveTo : "")}" style="flex:1"><button class="btn sm" type="button" data-act="moveChore" data-id="${esc(c.id)}">Mover</button></div><small class="muted">Por ejemplo, si es feriado. Después sigue como siempre.</small></label>` : ""}
       <div class="field"><span>Registrar como hecha por otra persona</span><div class="row"><select class="input" name="doneBy" style="flex:1;width:auto">${peopleList().map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select><button class="btn" type="button" data-act="choreDoneBy" data-id="${esc(c.id)}">Registrar hoy</button></div></div>
-      <div class="field"><span>Cambiar el turno: esta vez la hace</span><div class="row"><select class="input" name="nextBy" style="flex:1;width:auto">${peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === st?.who ? "selected" : ""}>${esc(p.id === me ? "Yo" : p.name)}</option>`).join("")}</select><button class="btn" type="button" data-act="assignChore" data-id="${esc(c.id)}">Asignar</button></div><small class="muted">Después sigue como estaba.</small></div>
+      <div class="field"><span>Cambiar el turno: esta vez la hace</span><div class="row"><select class="input" name="nextBy" style="flex:1;width:auto">${peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === st?.who ? "selected" : ""}>${esc(p.id === me ? "Vos" : p.name)}</option>`).join("")}</select><button class="btn" type="button" data-act="assignChore" data-id="${esc(c.id)}">Asignar</button></div><small class="muted">Después sigue como estaba.</small></div>
     </div></details>` : ""}
     <div class="form-actions"><button class="btn primary" type="submit">${isNew ? "Crear tarea" : "Guardar"}</button>${isNew ? "" : delBtn("chore")}</div>`, async (fd, f) => {
     const name = (fd.get("name") || "").trim(); if (!name) return formErr("Poné un nombre.", "name");
@@ -2859,7 +2909,7 @@ function dueSheet(d, preset) {
       <label class="field" data-nrow><span>N</span><input class="input" type="number" name="n" min="1" max="50" value="${esc(Number(x.n) || 1)}"></label>
       <label class="field"><span>Primer aviso</span><select class="input" name="lead">${[0, 1, 3, 7, 15, 30, 60].map(v => `<option value="${v}" ${Number(x.lead ?? 7) === v ? "selected" : ""}>${v === 0 ? "El mismo día" : v === 1 ? "1 día antes" : v + " días antes"}</option>`).join("")}</select><small class="muted">Además te avisamos el día anterior y el mismo día.</small></label>
     </div>
-    <label class="field"><span>Quién se encarga</span><select class="input" name="owner"><option value="">Sin asignar</option>${peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === x.owner ? "selected" : ""}>${esc(p.id === me ? "Yo" : p.name)}</option>`).join("")}</select></label>
+    <label class="field"><span>Quién se encarga</span><select class="input" name="owner"><option value="">Sin asignar</option>${peopleList().map(p => `<option value="${esc(p.id)}" ${p.id === x.owner ? "selected" : ""}>${esc(p.id === me ? "Vos" : p.name)}</option>`).join("")}</select></label>
     ${isNew ? `<div class="field"><span>¿Quién la ve?</span><div class="seg"><label><input type="radio" name="scope" value="shared" checked><span>Compartida</span></label><label><input type="radio" name="scope" value="private"><span>Solo yo</span></label></div><small class="muted">"Solo yo" sirve, por ejemplo, para la idea de regalo de un cumple.</small></div>` : ""}
     <label class="field"><span>Nota (opcional)</span><textarea class="input" name="note" maxlength="300" placeholder="Dónde se paga, a quién llamar… No anotes claves ni datos de tarjeta.">${esc(x.note || "")}</textarea></label>
     <div class="field gift-box" data-gift><span>🎁 Regalo (esto lo ves solo vos)</span>
@@ -2917,7 +2967,7 @@ function pollState(p) {
 }
 V.decidir = () => {
   const ps = Object.values(S.polls).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const head = hogarHead('<button class="btn primary" data-act="newPoll">+ Votación</button>') + checkinCard() + ideasCard() + `<h2 style="margin:18px 2px 8px">Decidir algo</h2>`;
+  const head = hogarHead('<button class="btn primary" data-act="newPoll">+ Votación</button>') + ideasCard() + `<h2 style="margin:18px 2px 8px">Decidir algo</h2>`;
   if (!ps.length) return head + `<section class="card"><div class="empty"><b>Decidan sin dar vueltas</b>Armen una votación rápida (qué comer, qué ver, qué hacer el finde). Cada uno dice sí o no y solo ven las coincidencias.
     <div class="row" style="justify-content:center;margin-top:14px">${Object.entries(POLL_TEMPLATES).map(([k, t]) => `<button class="btn" data-act="quickPoll" data-k="${k}">${esc(t[0])}</button>`).join("")}</div></div></section>`;
   return head + `<section class="card" style="max-width:760px"><div class="list">${ps.map(p => { const st = pollState(p);
@@ -3091,7 +3141,7 @@ const HELP = {
   decidir:`<p><b>¿Cómo estamos?</b>: tres preguntas por semana; las respuestas se ven cuando contestaron los dos.</p><p><b>Planes</b>: anoten ideas, sorteen una cuando no sepan qué hacer y guarden cómo estuvo.</p><p><b>Votaciones</b>: armen una votación (qué comer, qué ver, qué hacer). Cada uno dice sí o no y <b>solo se ven las coincidencias</b> cuando votaron todos.</p>`,
   mascotas:`<p>Una ficha por mascota con veterinario, alimento, medicación y peso. Sus vacunas y antiparasitarios se cargan como fechas y te avisan antes.</p>`
 };
-const helpBtn = v => `<button class="help-btn" data-act="help" data-v="${v}" aria-label="Cómo funciona">?</button>`;
+const helpBtn = v => `<button class="help-btn" data-act="help" data-v="${v}" aria-label="Cómo funciona" style="margin-left:auto">?</button>`;
 
 /* ---------- pets, gifts, wallets & cards, projection ---------- */
 const PET_KINDS = [["perro", "Perro"], ["gato", "Gato"], ["otro", "Otro"]];
@@ -3240,7 +3290,7 @@ function stmtSheet(cardId, ymS) {
     <div class="frow"><label class="field"><span>¿Cuánto te viene en pesos?</span><input class="input money" name="ars" inputmode="decimal" value="${esc(amtStr(o.ARS || ""))}" placeholder="${esc(amtStr(st.logged.ARS || 0))}"></label>
       <label class="field"><span>En dólares</span><input class="input money" name="usd" inputmode="decimal" value="${esc(amtStr(o.USD || ""))}" placeholder="${esc(amtStr(st.logged.USD || 0))}"></label></div>
     <p class="small muted" style="margin:0">Si ya tenés el resumen (o la app del banco te lo muestra), poné el total real con cuotas, impuestos y lo que no cargaste. Si lo dejás vacío, usamos lo que cargaste.</p>
-    ${st.paid ? `<p class="small" style="margin:0">✅ Ya lo pagaste.</p>` : accs.length ? `<label class="row small" style="gap:6px"><input type="checkbox" name="pay"> Ya lo pagué desde <select class="input" name="from" style="width:auto">${accs.map(a => `<option value="${esc(a.id)}" ${c.payFrom === a.id ? "selected" : ""}>${esc(a.name)} (${esc(a.cur || "ARS")})</option>`).join("")}</select></label><small class="muted">Se descuenta de esa cuenta en su moneda. Si pagás dólares con pesos, poné en "pesos" el total que pagaste.</small>` : ""}
+    ${st.paid ? `<p class="small" style="margin:0">✅ Ya lo pagaste.</p>` : `<label class="row small" style="gap:6px"><input type="checkbox" name="pay"> Ya lo pagué desde <select class="input" name="from" style="width:auto" data-chg="newAcc">${accs.length ? "" : `<option value="">Elegí o creá una cuenta</option>`}${accs.map(a => `<option value="${esc(a.id)}" ${c.payFrom === a.id ? "selected" : ""}>${esc(a.name)} (${esc(a.cur || "ARS")})</option>`).join("")}<option value="__newacc">+ Nueva cuenta…</option></select></label><small class="muted">Se descuenta de esa cuenta en su moneda. Si pagás dólares con pesos, poné en "pesos" el total que pagaste.</small>`}
     <div class="form-actions"><button class="btn primary" type="submit">Guardar</button></div>`, async fd => {
     const ars = parseAmt(fd.get("ars") || ""), usd = parseAmt(fd.get("usd") || "");
     const stmts = {...(prefs().stmts || {})}, key = c.id + ":" + ymS, cur0 = stmts[key] || {};
@@ -3255,17 +3305,25 @@ function stmtSheet(cardId, ymS) {
   });
 }
 function transferSheet() {
-  const accs = pmList().filter(a => PM_KINDS[a.kind]?.acc); if (accs.length < 2) { toast("Necesitás al menos dos cuentas (por ejemplo Efectivo y Banco)."); return; }
-  openSheet("Pasar plata entre cuentas", `<div class="frow"><label class="field"><span>Desde</span><select class="input" name="from">${accs.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}</select></label>
-      <label class="field"><span>Hacia</span><select class="input" name="to">${accs.map((a, i) => `<option value="${esc(a.id)}" ${i === 1 ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label></div>
+  const accs = pmList().filter(a => PM_KINDS[a.kind]?.acc);
+  openSheet("Pasar plata entre cuentas", `<div class="frow"><label class="field"><span>Desde</span><select class="input" name="from" data-chg="newAcc">${accs.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}<option value="__newacc">+ Nueva cuenta…</option></select></label>
+      <label class="field"><span>Hacia</span><select class="input" name="to" data-chg="newAcc">${accs.map((a, i) => `<option value="${esc(a.id)}" ${i === 1 ? "selected" : ""}>${esc(a.name)}</option>`).join("")}<option value="__newacc">+ Nueva cuenta…</option></select></label></div>
     <div class="frow"><label class="field"><span>Monto</span><input class="input money" name="amount" inputmode="decimal" placeholder="0,00"></label><label class="field"><span>Fecha</span><input class="input" type="date" name="date" value="${todayS()}"></label></div>
     <p class="small muted" style="margin:0">No cuenta como gasto ni ingreso: solo mueve el saldo (por ejemplo, sacar plata del cajero).</p>
     <div class="form-actions"><button class="btn primary" type="submit">Guardar</button></div>`, async fd => {
     const from = fd.get("from"), to = fd.get("to"), amount = parseAmt(fd.get("amount") || ""); if (from === to) return formErr("Elegí dos cuentas distintas.");
-    if ((accs.find(x => x.id === from)?.cur || "ARS") !== (accs.find(x => x.id === to)?.cur || "ARS")) return formErr("Las dos cuentas tienen que ser de la misma moneda. Para comprar o vender dólares, cargalo como gasto en una e ingreso en la otra."); if (!(amount > 0)) return formErr("Poné el monto.", "amount");
-    const a = accs.find(x => x.id === from), id = newId();
+    if ((pmList().find(x => x.id === from)?.cur || "ARS") !== (pmList().find(x => x.id === to)?.cur || "ARS")) return formErr("Las dos cuentas tienen que ser de la misma moneda. Para comprar o vender dólares, cargalo como gasto en una e ingreso en la otra."); if (!(amount > 0)) return formErr("Poné el monto.", "amount");
+    const all = pmList(), a = all.find(x => x.id === from), id = newId(); if (!a || !all.some(x => x.id === to)) return formErr("Elegí las dos cuentas.");
     await put(privPath(id), {id, kind:"tx", type:"transfer", from, to, amount:r2(amount), cur:a.cur || "ARS", date:fd.get("date") || todayS(), desc:"Transferencia", cat:"", createdAt:Date.now()}); closeSheet(); toast("Listo");
   });
+}
+// Resumen compacto para la pestaña Mes: saldos y próximos resúmenes. Se configura en Personalizar → Mis finanzas.
+function myAccountsHtml() {
+  const list = pmList(), accs = list.filter(a => PM_KINDS[a.kind]?.acc), cards = list.filter(a => a.kind === "credito");
+  if (!list.length) return `<section class="card" style="margin-bottom:14px"><div class="row" style="flex-wrap:nowrap;gap:12px"><span style="font-size:22px">💳</span><span class="small muted" style="flex:1">Sumá tu efectivo, cuentas y tarjetas para ver saldos, cuánto te viene de cada tarjeta y cuánto podés ahorrar.</span><button class="btn sm" data-act="ajGo" data-p="p-fin">Configurar</button></div></section>`;
+  const chips = [...accs.map(a => `<button class="acc-chip" data-act="pmEdit" data-id="${esc(a.id)}"><small>${PM_KINDS[a.kind].i} ${esc(a.name)}</small><b class="money">${esc(money(accountBalance(a), a.cur || "ARS").replace(/,00$/, ""))}</b></button>`),
+    ...cards.map(c => { const nx = cardStatements(c)[1]; return `<button class="acc-chip" data-act="stmtEdit" data-id="${esc(c.id)}" data-ym="${nx.m}"><small>💳 ${esc(c.name)} · ${esc(MON_S[Number(nx.m.slice(5)) - 1])}</small><b class="money">${esc(money(nx.ARS, "ARS").replace(/,00$/, ""))}</b><i>${nx.paid ? "Pagado" : nx.real ? "Real" : "Estimado"}</i></button>`; })].join("");
+  return `<section class="card" style="margin-bottom:14px;padding-block:12px"><div class="row" style="margin-bottom:8px"><b style="flex:1">Mis cuentas</b><button class="linkbtn small" data-act="ajGo" data-p="p-fin">Gestionar ›</button></div><div class="acc-chips">${chips}</div></section>`;
 }
 function walletsHtml(cur) {
   const list = pmList(), accs = list.filter(a => PM_KINDS[a.kind]?.acc), cards = list.filter(a => a.kind === "credito"), others = list.filter(a => PM_KINDS[a.kind]?.link);
@@ -3310,7 +3368,7 @@ function savingsHtml(cur, ym) {
   return `<section class="card" style="margin-bottom:14px"><div class="card-h"><span class="ic">${UI.up}</span><h2>${past ? "Cómo cerró el mes" : "¿Cuánto podés ahorrar?"}</h2></div>
     ${row(past ? "Entró" : "Entra (cobrado + lo que falta cobrar)", income)}
     ${row(past ? "Gastos del día a día y fijos" : "Gastos del día a día al ritmo actual + fijos que faltan", spent - varSpent + varProj + pendG)}
-    ${cards.length ? row("Tarjetas que vencen este mes", cardsTot) + `<div class="small muted" style="margin:-2px 0 6px">${cards.map(x => `${esc(x.c.name)}: ${esc(money(x.amt, cur).replace(/,00$/, ""))} ${x.paid ? "✅" : x.real ? "(real)" : `<button class="linkbtn" data-act="stmtEdit" data-id="${esc(x.c.id)}" data-ym="${x.closeYm}">(estimado: poné el real)</button>`}`).join(" · ")}</div>` : pmList().some(c => c.kind === "credito") ? "" : `<div class="small muted" style="margin:-2px 0 6px">¿Pagás con tarjeta de crédito? Sumala en Análisis → Medios de pago y poné cuánto te viene.</div>`}
+    ${cards.length ? row("Tarjetas que vencen este mes", cardsTot) + `<div class="small muted" style="margin:-2px 0 6px">${cards.map(x => `${esc(x.c.name)}: ${esc(money(x.amt, cur).replace(/,00$/, ""))} ${x.paid ? "✅" : x.real ? "(real)" : `<button class="linkbtn" data-act="stmtEdit" data-id="${esc(x.c.id)}" data-ym="${x.closeYm}">(estimado: poné el real)</button>`}`).join(" · ")}</div>` : pmList().some(c => c.kind === "credito") ? "" : `<div class="small muted" style="margin:-2px 0 6px">¿Pagás con tarjeta de crédito? <button class="linkbtn" data-act="ajGo" data-p="p-fin">Sumala</button> y poné cuánto te viene.</div>`}
     <div class="sum-row" style="border-top:1px solid var(--line);padding-top:8px"><span><b>${past ? "Te quedó" : "Te quedaría para ahorrar"}</b></span><b class="money ${left < 0 ? "pill-neg" : "pill-pos"}" style="font-size:18px">≈ ${esc(money(left, cur).replace(/,00$/, ""))}</b></div>
     ${income > 0 ? `<p class="small muted" style="margin:4px 0 0">${left >= 0 ? `Sería el ${Math.round(left / income * 100)}% de lo que entra.` : "Este mes sale más de lo que entra."}</p>` : ""}
     ${ym === now && left > 0 ? `<div class="field" style="margin-top:10px"><span>Quiero ahorrar <b class="money" data-goalv>${esc(money(goal, cur).replace(/,00$/, ""))}</b> este mes</span>
@@ -3385,7 +3443,7 @@ function eventSheet(ev, dayDefault, occ) {
       <label class="field"><span>Hasta</span><input class="input" type="time" name="end" value="${esc(e.end || "")}"></label>
     </div>
     <label class="row small" style="font-weight:600;margin-top:-4px"><input type="checkbox" name="allDay" ${e.allDay ? "checked" : ""}> Todo el día</label>
-    <div class="field"><span>¿A quién involucra?</span><div class="checks">${peopleList().map(p => `<label><input type="checkbox" name="who" value="${esc(p.id)}" ${(e.who || []).includes(p.id) ? "checked" : ""}><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.id === me ? "Yo" : p.name)}</label>`).join("")}</div></div>
+    <div class="field"><span>¿A quién involucra?</span><div class="checks">${peopleList().map(p => `<label><input type="checkbox" name="who" value="${esc(p.id)}" ${(e.who || []).includes(p.id) ? "checked" : ""}><span class="dot" style="--c:${esc(p.color)}"></span>${esc(p.id === me ? "Vos" : p.name)}</label>`).join("")}</div></div>
     <div class="field"><span>¿Quién lo ve?</span>
       ${isOwner ? `<div class="seg">${[["shared","Todos"],["busy","Como ocupado"],["private","Solo yo"]].map(([v, t]) => `<label><input type="radio" name="vis" value="${v}" ${e.vis === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div><small class="muted" data-vishelp></small>
         <label class="field" data-busydet style="margin-top:6px"><span>Qué se ve del horario</span><select class="input" name="busyDetail">${[["franja","Solo la franja (mañana, tarde o noche)"],["exacto","El horario exacto"],["dia","Solo «ocupado» ese día"]].map(([v, l]) => `<option value="${v}" ${(e.busyDetail || "franja") === v ? "selected" : ""}>${l}</option>`).join("")}</select><small class="muted">Si el evento se repite, se ve que se repite.</small></label>`
@@ -3472,7 +3530,7 @@ async function saveEvent(ev) {
 
 function expenseSheet(ex, preset) {
   const g = ex ? S.groups[ex.group] || curGroup() : (preset?.group && S.groups[preset.group]) || curGroup();
-  if (!g) { toast("Para cargar un gasto compartido, primero creá un grupo en Cuentas."); return; }
+  if (!g) { toast("Para cargar un gasto compartido, primero creá un grupo en Gastos compartidos."); return; }
   const me = meId(); const isNew = !ex;
   const members = [...new Set([...(g.members || []), ...(ex ? [ex.paidBy, ex.from, ex.to, ...Object.keys(ex.split || {})] : [])].filter(id => id && S.people[id]))];
   const e = ex || {id:newId(), kind:preset?.kind || "expense", group:g.id, cur:preset?.cur || g.cur || prefs().cur, date:todayS(), paidBy:me, ...groupDefaultSplit(g, members), cat:cfg().expCats[0].id, ...(preset || {})};
@@ -3491,7 +3549,7 @@ function expenseSheet(ex, preset) {
       <label class="field"><span>A quién</span><select class="input" name="to">${members.map(id => `<option value="${esc(id)}" ${id === (e.to || members.find(x => x !== (e.from || members[0]))) ? "selected" : ""}>${esc(pName(id))}</option>`).join("")}</select></label>
     </div>
     <div data-k="expense" class="frow">
-      <label class="field"><span>Pagó</span><select class="input" name="paidBy">${members.map(id => `<option value="${esc(id)}" ${id === e.paidBy ? "selected" : ""}>${esc(id === me ? "Yo" : pName(id))}</option>`).join("")}</select></label>
+      <label class="field"><span>Pagó</span><select class="input" name="paidBy">${members.map(id => `<option value="${esc(id)}" ${id === e.paidBy ? "selected" : ""}>${esc(id === me ? "Vos" : pName(id))}</option>`).join("")}</select></label>
       <label class="field"><span>Categoría</span><select class="input" name="cat" data-chg="newSharedCat">${opts(cfg().expCats, e.cat)}<option value="__newcat">+ Nueva categoría…</option></select></label>
     </div>
     <div class="frow">
@@ -3512,7 +3570,7 @@ function expenseSheet(ex, preset) {
       ${e.cuota ? `<p class="small muted" style="margin:0">Cuota ${esc(e.cuota.n)} de ${esc(e.cuota.total)} (total ${esc(money(e.cuota.totalAmount, e.cur))}).</p>` : ""}
       ${e.paidBy && e.paidBy !== me && !isNew ? "" : payWithField(e.payWith || "", "Para tus cuentas y tarjetas, si pagaste vos. Tu pareja no ve los nombres.", isNew)}
       <label class="field"><span>Nota</span><textarea class="input" name="note" maxlength="300" placeholder="No anotes claves, CBU ni datos de tarjeta.">${esc(e.note || "")}</textarea></label>
-      ${isNew && !e.fixedId ? `<label class="vis-opt"><input type="checkbox" name="makeFixed"><span><b>Es un gasto fijo mensual</b><small>Cada mes te lo recuerdo en Inicio para cargarlo con un toque.</small></span></label>` : ""}
+      ${isNew && !e.fixedId ? `<label class="vis-opt"><input type="checkbox" name="makeFixed"><span><b>Se repite cada mes</b><small>Cada mes te lo recuerdo en Inicio para cargarlo con un toque.</small></span></label>` : ""}
       ${e.fixedId && S.fixed[e.fixedId] ? `<p class="small muted" style="margin:0">Gasto fijo mensual. Si cambiás el monto, se actualiza para los próximos meses.</p>` : ""}
     </div></details>
     ${!isNew ? histHtml(e) : ""}
@@ -3673,10 +3731,10 @@ function txSheet(tx, preset) {
     </div>
     ${payWithField(t.payWith || "", "", isNew)}
     ${isNew && !t.tplId ? `<label class="field" data-cuotas><span>¿En cuotas?</span><input class="input" type="number" name="cuotas" min="1" max="48" value="1" style="max-width:120px"><small class="muted">Poné el total; cada cuota cuenta en su mes.</small></label>` : ""}
-    ${isNew && !t.tplId ? `<label class="vis-opt"><input type="checkbox" name="makeTpl"><span><b>Se repite todos los meses</b><small>Sueldo, gimnasio, suscripciones: te lo recuerdo cada mes.</small></span></label>` : ""}
+    ${isNew && !t.tplId ? `<label class="vis-opt"><input type="checkbox" name="makeTpl"><span><b>Se repite cada mes</b><small>Sueldo, gimnasio, suscripciones: te lo recuerdo cada mes.</small></span></label>` : ""}
     <p class="small muted" style="margin:0">Solo vos ves estos movimientos.</p>
     <div class="form-actions"><button class="btn primary" type="submit">${isNew ? "Guardar" : "Guardar cambios"}</button>${isNew ? "" : `<button class="btn" type="button" data-act="dupTx" data-id="${esc(t.id)}">Duplicar</button>` + delBtn("tx")}</div>`;
-  openSheet(isNew ? "Nuevo movimiento" : "Editar movimiento", body, async (fd) => {
+  openSheet(isNew ? "Nuevo gasto o ingreso" : (t.type === "ingreso" ? "Editar ingreso" : "Editar gasto"), body, async (fd) => {
     const amount = parseAmt(fd.get("amount")); if (!(amount > 0)) return formErr("Poné un monto mayor a cero.", "amount");
     const pw = fd.get("payWith"); if (pw !== null && pw !== (prefs().lastPm || "")) savePrefs({lastPm:pw}).catch(() => {});
     const keep = {}; for (const k of ["cuota", "from", "to", "cardpay", "card", "stmt", "tplId", "source"]) if (t[k] !== undefined) keep[k] = t[k];
@@ -3706,7 +3764,7 @@ function txSheet(tx, preset) {
     f.addEventListener("change", upd); upd();
     wireAmount(f); wireAutoCat(f, () => visCats(f.type.value === "ingreso" ? "inc" : "exp"), isNew);
     const cq = () => { const el = f.querySelector("[data-cuotas]"); if (el) el.hidden = f.type.value === "ingreso"; }; f.addEventListener("change", cq); cq();
-    S.onDelete = async () => { await softDel(privPath(t.id)); closeSheet(); toast("Movimiento movido a la papelera", () => restore(privPath(t.id))); };
+    S.onDelete = async () => { await softDel(privPath(t.id)); closeSheet(); toast("Movido a la papelera", () => restore(privPath(t.id))); };
   });
 }
 
@@ -3764,17 +3822,18 @@ async function saveCfg(fields) { if (S.config.main) await patch("config/main", f
 
 function quickAddSheet() {
   const opt = (act, icon, color, t, d) => `<button type="button" data-act="${act}"><span class="cat-ic" style="--c:${color}">${icon}</span>${t}<small>${d}</small></button>`;
-  openSheet("¿Qué querés agregar?", `<div class="qa qa-top">
-    ${opt("qaExpense", UI.people, "var(--accent)", "Gasto compartido", "Se divide")}
-    ${opt("qaItem", UI.list, "#C99A1A", "A una lista", "Compras…")}
-    ${opt("qaEvent", UI.cal, "#2E9E6A", "Evento", "A la agenda")}
-  </div><div class="month-h" style="margin-top:14px">Más</div><div class="qa">
-    ${opt("qaTx", UI.wallet, "var(--accent2)", "Gasto o ingreso mío", "Solo lo ves vos")}
-    ${opt("qaChore", SV(AREAS[2].icon), "#0E7A68", "Tarea del hogar", "Se repite y se turnan")}
-    ${opt("qaDue", UI.cal, "#8E6C0F", "Fecha o vencimiento", "VTV, seguro, cumple…")}
-    ${opt("qaPoll", UI.scale, "#B54BB0", "Decidir algo", "Votan sí o no, ven coincidencias")}
-    ${opt("qaThanks", SV('<path d="M20.8 6.6a5 5 0 0 0-8.8-2.1A5 5 0 0 0 3.2 6.6C2 11 12 20 12 20s10-9 8.8-13.4z"/>'), "#B04C32", "Un gracias", "Una nota corta para tu pareja")}
-  </div>`, null);
+  const ALL = {
+    qaExpense:[UI.people, "var(--accent)", "Gasto compartido", "Se divide"], qaTx:[UI.wallet, "var(--accent2)", "Gasto o ingreso mío", "Solo lo ves vos"],
+    qaItem:[UI.list, "#C99A1A", "A una lista", "Compras…"], qaEvent:[UI.cal, "#2E9E6A", "Evento", "A la agenda"],
+    qaChore:[SV(AREAS[2].icon), "#0E7A68", "Tarea del hogar", "Se repite y se turnan"], qaDue:[SV('<path d="M12 7v5l3 2"/><circle cx="12" cy="12" r="9"/>'), "#8E6C0F", "Fecha o vencimiento", "VTV, seguro, cumple…"],
+    qaMeal:[SV('<path d="M4 3v8a3 3 0 0 0 6 0V3M7 3v18M17 3c-2 0-3 3-3 6s1 4 3 4v8"/>'), "#A0522D", "Comida", "Al menú de la semana"], qaIdea:[SV('<path d="M12 2l2.6 6.6L21 9l-5 4.4L17.5 21 12 17l-5.5 4 1.5-7.6L3 9l6.4-.4z"/>'), "#6A5ACD", "Idea de plan", "Para hacer juntos"],
+    qaPoll:[UI.scale, "#B54BB0", "Decidir algo", "Votan y ven coincidencias"], qaThanks:[SV('<path d="M20.8 6.6a5 5 0 0 0-8.8-2.1A5 5 0 0 0 3.2 6.6C2 11 12 20 12 20s10-9 8.8-13.4z"/>'), "#B04C32", "Un gracias", "Una nota para tu pareja"]};
+  // Lo de la pantalla en la que estás va primero
+  const here = S.view === "cuentas" ? ["qaExpense"] : S.view === "finanzas" ? ["qaTx"] : S.view === "agenda" ? (S.calMode === "fechas" ? ["qaDue", "qaEvent"] : ["qaEvent", "qaDue"]) :
+    S.view === "hogar" ? ({listas:["qaItem"], menu:["qaMeal"], decidir:["qaIdea", "qaPoll"], mascotas:["qaDue"]}[S.hTab] || ["qaChore"]) : [];
+  const top = [...new Set([...here, "qaExpense", "qaTx", "qaItem", "qaEvent"])].slice(0, 3);
+  const rest = Object.keys(ALL).filter(k => !top.includes(k));
+  openSheet("¿Qué querés agregar?", `<div class="qa qa-top">${top.map(k => opt(k, ...ALL[k])).join("")}</div><div class="month-h" style="margin-top:14px">Más</div><div class="qa">${rest.map(k => opt(k, ...ALL[k])).join("")}</div>`, null);
 }
 function listSheet(L) {
   const isNew = !L; const x = L || {id:newId(), name:""};
@@ -3857,7 +3916,7 @@ async function ensureGroup(pid, extra = []) {
 
 /* ---------- actions ---------- */
 const A = {
-  go: t => { S.view = t.dataset.v; if (S.view === "inversiones") { S.view = "finanzas"; S.fTab = "inversiones"; store.set("fTab", "inversiones"); } if (S.view === "fechas" || S.view === "mascotas") { S.view = "agenda"; S.calMode = "fechas"; } if (["listas", "tareas", "decidir", "menu"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
+  go: t => { S.view = t.dataset.v; if (S.view === "inversiones") { S.view = "finanzas"; S.fTab = "inversiones"; store.set("fTab", "inversiones"); } if (S.view === "fechas") { S.view = "agenda"; S.calMode = "fechas"; } if (S.view === "mascotas") { S.view = "hogar"; S.hTab = "mascotas"; } if (S.view === "ajustes") S.ajPage = t.dataset.page || ""; if (["listas", "tareas", "decidir", "menu", "mascotas"].includes(S.view)) { S.hTab = S.view; S.view = "hogar"; store.set("hTab", S.hTab); } store.set("view", S.view); render(); window.scrollTo({top:0}); },
   closeSheet,
   claim: t => { const p = S.people[t.dataset.id]; if (p) claimSheet(p); },
   saveFx: async t => { const cur = t.dataset.cur; const v = parseAmt(document.getElementById("fx-" + cur)?.value); if (!(v > 0)) return toast("Poné cuánto vale en pesos, por ejemplo 1200."); await saveCfg({fx:{...(cfg().fx || {}), [cur]:{rate:v, date:todayS()}}}); toast(`Cotización guardada: 1 ${cur} = ${money(v, BASE)}`); },
@@ -3955,6 +4014,10 @@ const CHG = {
   newSharedCat: t => { if (t.value !== "__newcat") { t.dataset.prev = t.value; return; } t.value = t.dataset.prev || cfg().expCats[0].id;
     openChild(() => quickSharedCatSheet(), id => { const sel = document.querySelector('#sheetForm select[name="cat"]'); if (!sel || !id) return; const k = cfg().expCats.find(x => x.id === id);
       const o = document.createElement("option"); o.value = id; o.textContent = k ? k.name : "Nueva"; sel.insertBefore(o, sel.querySelector('option[value="__newcat"]')); sel.value = id; sel.dataset.prev = id; }); },
+  homeOn: t => savePrefs({home:homeCards().map(k => k.id === t.dataset.id ? {...k, on:t.checked} : k)}),
+  hogarTab: t => { const h = new Set(prefs().hogarHidden || []); if (t.checked) h.delete(t.dataset.id); else h.add(t.dataset.id); savePrefs({hogarHidden:[...h]}); },
+  theme: t => { store.set("theme", t.value); applyLook(); },
+  fontSize: t => { store.set("fs", t.value); applyLook(); },
   fPm: t => { S.fPm = t.value; render(); },
   fCat: t => { S.fCat = t.value; render(); },
   saveGoal: t => { const v = Number(t.value) || 0, cur = t.dataset.cur; const el = t.closest(".field")?.querySelector("[data-goalv]"); if (el) el.textContent = money(v, cur).replace(/,00$/, ""); clearTimeout(S.goalT); S.goalT = setTimeout(() => savePrefs({saveGoal:{...(prefs().saveGoal || {}), [t.dataset.key]:v}}).catch(() => {}), 500); },
@@ -3986,13 +4049,8 @@ const DO = {
   delContrib: async t => { await del(t.dataset.scope === "shared" ? "contribs/" + t.dataset.id : privPath(t.dataset.id)); t.closest(".item")?.remove(); toast("Borrado"); }
 };
 Object.assign(A, {
-  quickAdd: () => {
-    if (S.view === "cuentas") return expenseSheet(null);
-    if (S.view === "agenda") return S.calMode === "fechas" ? dueSheet(null) : eventSheet(null, S.selDay);
-    if (S.view === "finanzas") return txSheet(null);
-    if (S.view === "hogar") return S.hTab === "listas" ? (sortedLists().length ? itemSheet() : listSheet(null)) : S.hTab === "decidir" ? ideaSheet() : S.hTab === "menu" ? mealSheet(todayS(), "cena") : choreSheet(null);
-    quickAddSheet();
-  },
+  quickAdd: () => quickAddSheet(),
+
   qaExpense: () => { closeSheet(); expenseSheet(null); },
   qaTx: () => { closeSheet(); txSheet(null); },
   qaEvent: () => { closeSheet(); eventSheet(null, todayS()); },
@@ -4026,6 +4084,8 @@ Object.assign(A, {
   qaDue: () => { closeSheet(); dueSheet(null); },
   qaPoll: () => { closeSheet(); newPollSheet(); },
   qaThanks: () => { closeSheet(); thanksSheet(); },
+  qaMeal: () => { closeSheet(); mealSheet(todayS(), "cena"); },
+  qaIdea: () => { closeSheet(); ideaSheet(); },
   newDue: () => dueSheet(null),
   newDueOn: t => dueSheet(null, {due:t.dataset.d}),
   editDue: t => { const d = findDue(t.dataset.id, t.dataset.scope); if (d) dueSheet(d); },
@@ -4089,6 +4149,10 @@ Object.assign(A, {
   invHolding: t => invHoldingSheet(t.dataset.sym),
   invLogout: () => { iolSave(null); closeSheet(); toast("Desconectado de este celu. Tus números quedan."); render(); },
   search: () => searchSheet(),
+  pickGroup: t => { S.groupId = t.dataset.id; store.set("groupId", S.groupId); render(); },
+  groupMenu: t => { const g = S.groups[t.dataset.id]; showDoc(g ? g.name : "Grupo", `<div class="grid" style="gap:8px">${g ? `<button class="btn" data-act="editGroup" data-id="${esc(g.id)}" style="justify-content:flex-start">✎ Editar ${esc(g.name)} (integrantes, división)</button>` : ""}<button class="btn" data-act="newGroup" style="justify-content:flex-start">+ Nuevo grupo</button></div>`); },
+  ajGo: t => { closeSheet(); S.view = "ajustes"; S.ajPage = t.dataset.p || ""; render(); window.scrollTo({top:0}); },
+  homeMove: async t => { const cards = homeCards(), i = Number(t.dataset.i), j = i + Number(t.dataset.d); if (j < 0 || j >= cards.length) return; [cards[i], cards[j]] = [cards[j], cards[i]]; await savePrefs({home:cards}); },
   catMgr: t => catMgrSheet(t.dataset.type || "exp"),
   catType: t => { catSync($("#sheetForm")); catMgrSheet(t.value, true); },
   catMove: t => { const f = $("#sheetForm"); catSync(f); const D = S.catDraft, i = Number(t.dataset.i), j = i + Number(t.dataset.d); if (j < 0 || j >= D.list.length) return; [D.list[i], D.list[j]] = [D.list[j], D.list[i]]; catMgrSheet(D.type, true); },
@@ -4257,10 +4321,16 @@ render();
   };
   document.addEventListener("pointerup", end); document.addEventListener("pointercancel", end);
 })();
+// Apariencia elegida en este celu
+function applyLook() {
+  const th = store.get("theme", "auto"); if (th === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = th;
+  const fs = Number(store.get("fs", "1")) || 1; document.body.style.zoom = fs === 1 ? "" : String(fs);
+}
+applyLook();
 // Mantener apretado el + abre siempre el menú completo
 (() => {
   const fab = document.getElementById("fab"); let tm = null;
-  fab.title = "Mantené apretado para ver todas las opciones";
+  fab.title = "Agregar";
   fab.addEventListener("pointerdown", () => { tm = setTimeout(() => { tm = "done"; if (navigator.vibrate) navigator.vibrate(10); quickAddSheet(); }, 500); });
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) fab.addEventListener(ev, () => { if (tm && tm !== "done") { clearTimeout(tm); tm = null; } });
   fab.addEventListener("click", e => { if (tm === "done") { e.stopImmediatePropagation(); e.preventDefault(); } tm = null; }, true);
